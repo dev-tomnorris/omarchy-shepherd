@@ -1,104 +1,65 @@
-"""Normalize Herdr snapshot to the documented QML contract.
-
-Workspace/tab join from nested snapshot lists is intentionally unchanged here;
-that is a later bounded task.
-"""
-
-from collections import defaultdict
+"""Normalize Herdr snapshot to the documented QML contract."""
 
 
 class Normalizer:
     VALID_STATUSES = {"working", "blocked", "done", "idle", "unknown"}
-
-    def __init__(self):
-        self.focused_agent_pane_id = None
+    DEFAULT_COUNTS = {"working": 0, "blocked": 0, "done": 0, "idle": 0, "unknown": 0}
 
     def normalize_snapshot(self, snapshot):
+        workspaces = {ws["workspace_id"]: ws for ws in snapshot.get("workspaces", [])}
+        tabs = {tab["tab_id"]: tab for tab in snapshot.get("tabs", [])}
         agents = snapshot.get("agents", [])
-        self.focused_agent_pane_id = snapshot.get("focused_pane_id")
         normalized = []
-        counts = defaultdict(int)
+        counts = dict(self.DEFAULT_COUNTS)
         for agent in agents:
-            normalized_agent = self._normalize_agent(agent)
+            normalized_agent = self._normalize_agent(agent, workspaces, tabs)
             if normalized_agent:
                 normalized.append(normalized_agent)
-                status = normalized_agent["status"]
-                if status in self.VALID_STATUSES:
-                    counts[status] += 1
+                counts[normalized_agent["status"]] += 1
         counts["total"] = len(normalized)
-        return {"agents": normalized, "counts": dict(counts)}
+        return {"agents": normalized, "counts": counts}
 
-    def _normalize_agent(self, agent):
+    def _normalize_agent(self, agent, workspaces, tabs):
         pane_id = agent.get("pane_id")
         if not pane_id:
+            return None
+        name = agent.get("name")
+        agent_name = agent.get("agent")
+        identity = name or agent_name
+        if not identity:
             return None
         status = agent.get("agent_status", "unknown")
         if status not in self.VALID_STATUSES:
             status = "unknown"
-        workspace = agent.get("workspace_id")
+        workspace_id = agent.get("workspace_id")
         tab_id = agent.get("tab_id")
-        tab_number = agent.get("tab_number", 1)
-        tab_label = agent.get("tab_label") or str(tab_number)
+        workspace = workspaces.get(workspace_id) if workspace_id else None
+        tab = tabs.get(tab_id) if tab_id else None
+        if workspace:
+            workspace_num = workspace.get("number", 0)
+            workspace_label = workspace.get("label") or workspace.get("workspace_id") or ""
+        else:
+            workspace_num = 0
+            workspace_label = workspace_id or ""
+        if tab:
+            tab_num = tab.get("number", 0)
+            tab_label = tab.get("label") or tab.get("tab_id") or ""
+        else:
+            tab_num = 0
+            tab_label = tab_id or ""
         return {
             "pane_id": pane_id,
-            "name": agent.get("name") or agent.get("agent") or "unknown",
+            "name": identity,
             "status": status,
-            "focused": agent.get("focused", False) or (pane_id == self.focused_agent_pane_id),
+            "focused": agent.get("focused", False),
             "workspace": {
-                "id": workspace,
-                "label": agent.get("workspace_label") or workspace,
-                "number": agent.get("workspace_number", 1),
+                "id": workspace_id or "",
+                "label": workspace_label,
+                "number": workspace_num,
             },
             "tab": {
-                "id": tab_id,
+                "id": tab_id or "",
                 "label": tab_label,
-                "number": tab_number,
+                "number": tab_num,
             },
-        }
-
-    def get_fixture(self):
-        return {
-            "agents": [
-                {
-                    "pane_id": "w1:p1",
-                    "name": "opencode",
-                    "status": "working",
-                    "focused": True,
-                    "workspace": {"id": "w1", "label": "Project", "number": 1},
-                    "tab": {"id": "w1:t1", "label": "1", "number": 1},
-                },
-                {
-                    "pane_id": "w1:p2",
-                    "name": "reviewer",
-                    "status": "blocked",
-                    "focused": False,
-                    "workspace": {"id": "w1", "label": "Project", "number": 1},
-                    "tab": {"id": "w1:t1", "label": "1", "number": 1},
-                },
-                {
-                    "pane_id": "w1:p3",
-                    "name": "builder",
-                    "status": "idle",
-                    "focused": False,
-                    "workspace": {"id": "w1", "label": "Project", "number": 1},
-                    "tab": {"id": "w1:t1", "label": "1", "number": 1},
-                },
-                {
-                    "pane_id": "w1:p4",
-                    "name": "formatter",
-                    "status": "done",
-                    "focused": False,
-                    "workspace": {"id": "w1", "label": "Project", "number": 1},
-                    "tab": {"id": "w1:t1", "label": "1", "number": 1},
-                },
-                {
-                    "pane_id": "w1:p5",
-                    "name": "tester",
-                    "status": "unknown",
-                    "focused": False,
-                    "workspace": {"id": "w1", "label": "Project", "number": 1},
-                    "tab": {"id": "w1:t1", "label": "1", "number": 1},
-                },
-            ],
-            "counts": {"working": 1, "blocked": 1, "done": 1, "idle": 1, "unknown": 1, "total": 5},
         }
