@@ -1,0 +1,92 @@
+{
+  "agents": [
+    {
+      "pane_id": "w1:p1",
+      "name": "dev-agent",
+      "status": "working",
+      "focused": true,
+      "workspace": {
+        "id": "w1",
+        "label": "Development",
+        "number": 1
+      },
+      "tab": {
+        "id": "w1:t1",
+        "label": "src",
+        "number": 1
+      }
+    },
+    {
+      "pane_id": "w1:p2",
+      "name": "build-agent",
+      "status": "blocked",
+      "focused": false,
+      "workspace": {
+        "id": "w1",
+        "label": "Development",
+        "number": 1
+      },
+      "tab": {
+        "id": "w1:t2",
+        "label": "build",
+        "number": 2
+      }
+    },
+    {
+      "pane_id": "w1:p3",
+      "name": "lint-agent",
+      "status": "idle",
+      "focused": false,
+      "workspace": {
+        "id": "w1",
+        "label": "Development",
+        "number": 1
+      },
+      "tab": {
+        "id": "w1:t1",
+        "label": "src",
+        "number": 1
+      }
+    },
+    {
+      "pane_id": "w2:p1",
+      "name": "test-agent",
+      "status": "done",
+      "focused": false,
+      "workspace": {
+        "id": "w2",
+        "label": "Testing",
+        "number": 2
+      },
+      "tab": {
+        "id": "w2:t1",
+        "label": "unit",
+        "number": 1
+      }
+    },
+    {
+      "pane_id": "w2:p2",
+      "name": "deploy-agent",
+      "status": "unknown",
+      "focused": false,
+      "workspace": {
+        "id": "w2",
+        "label": "Testing",
+        "number": 2
+      },
+      "tab": {
+        "id": "w2:t1",
+        "label": "unit",
+        "number": 1
+      }
+    }
+  ],
+  "counts": {
+    "working": 1,
+    "blocked": 1,
+    "done": 1,
+    "idle": 1,
+    "unknown": 1,
+    "total": 5
+  }
+}
