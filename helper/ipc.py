@@ -12,6 +12,7 @@ from helper.rpc import RpcDisconnected, RpcError, RpcTimeout
 
 FOCUS_FAILURE_MESSAGE = "Unable to focus pane."
 REFRESH_FAILURE_MESSAGE = "Unable to refresh state."
+MAX_LINE_BYTES = 65536
 
 
 def _diag(message):
@@ -21,6 +22,17 @@ def _diag(message):
 
 def _nonempty_string(value):
     return isinstance(value, str) and bool(value.strip())
+
+
+def _pending_byte_length(text):
+    return len(text.encode("utf-8"))
+
+
+def _reject_oversized_pending(ipc, pending):
+    if "\n" in pending or _pending_byte_length(pending) <= MAX_LINE_BYTES:
+        return pending
+    ipc.send_error(None, "invalid_json", "Line too long")
+    return ""
 
 
 class HelperIPC:
@@ -81,8 +93,12 @@ class HelperIPC:
         decoder = codecs.getincrementaldecoder("utf-8")("replace")
         pending = ""
         while self.running:
+            pending = _reject_oversized_pending(self, pending)
             while self.running and "\n" in pending:
                 line, pending = pending.split("\n", 1)
+                if _pending_byte_length(line) > MAX_LINE_BYTES:
+                    self.send_error(None, "invalid_json", "Line too long")
+                    continue
                 self._handle_line(line)
             if not self.running:
                 return
@@ -100,6 +116,7 @@ class HelperIPC:
                 return
             if not chunk:
                 pending += decoder.decode(b"", final=True)
+                pending = _reject_oversized_pending(self, pending)
                 if pending.strip():
                     self._handle_line(pending)
                 return

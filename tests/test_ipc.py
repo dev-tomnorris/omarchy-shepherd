@@ -16,7 +16,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
 sys.path.insert(0, _HERE)
 
-from helper.ipc import HelperIPC
+from helper.ipc import HelperIPC, MAX_LINE_BYTES
 from helper.rpc import RpcError
 from support import wait_until
 
@@ -632,6 +632,68 @@ class TestIpcSecurity(_IpcLoopTest):
         _assert_no_leak_markers(self, msg.get("message", ""))
         self.assertEqual(msg.get("message"), "Unable to focus pane.")
         self.assertNotIn("w1:p1", msg.get("message", ""))
+
+
+class TestIpcReaderEdgeCases(unittest.TestCase):
+    def test_partial_read_completes_command(self):
+        session = IpcSession()
+        try:
+            cmd = b'{"type":"focus","request_id":"req-part","pane_id":"w1:p1"}\n'
+            mid = len(cmd) // 2
+            session.write_raw(cmd[:mid].decode("ascii"))
+            time.sleep(0.05)
+            session.write_raw(cmd[mid:].decode("ascii"))
+            self.assertTrue(session.wait_for_messages(1, timeout=2.0), session.capture.raw())
+            _assert_action_result(self, session.messages()[0], "req-part", True)
+            self.assertEqual(session.helper.focus_calls, ["w1:p1"])
+        finally:
+            session.close()
+
+    def test_utf8_codepoint_split_across_reads(self):
+        session = IpcSession()
+        try:
+            cmd = '{"type":"focus","request_id":"req-\u00e9","pane_id":"w1:p1"}\n'
+            raw = cmd.encode("utf-8")
+            split_at = raw.index(b"\xc3") + 1
+            os.write(session._inwrite.fileno(), raw[:split_at])
+            time.sleep(0.05)
+            os.write(session._inwrite.fileno(), raw[split_at:])
+            self.assertTrue(session.wait_for_messages(1, timeout=2.0), session.capture.raw())
+            _assert_action_result(self, session.messages()[0], "req-\u00e9", True)
+        finally:
+            session.close()
+
+    def test_eof_with_partial_unterminated_line_emits_invalid_json(self):
+        session = IpcSession()
+        try:
+            session.write_raw('{"type":"focus","request_id":"req-eof"')
+            session.close_stdin()
+            self.assertTrue(session.wait_for_messages(1, timeout=2.0), session.capture.raw())
+            msg = session.messages()[0]
+            _assert_structured_error(self, msg, request_id=None)
+            self.assertEqual(msg.get("code"), "invalid_json")
+            self.assertEqual(session.helper.focus_calls, [])
+        finally:
+            session.close()
+
+    def test_unterminated_line_beyond_limit_is_rejected_without_hanging(self):
+        session = IpcSession()
+        try:
+            session.write_raw("x" * (MAX_LINE_BYTES + 1))
+            self.assertTrue(session.wait_for_messages(1, timeout=2.0), session.capture.raw())
+            msg = session.messages()[0]
+            _assert_structured_error(self, msg, request_id=None)
+            self.assertEqual(msg.get("code"), "invalid_json")
+            self.assertIn("too long", msg.get("message", "").lower())
+            session.write_command({
+                "type": "focus",
+                "request_id": "req-after-long",
+                "pane_id": "w1:p1",
+            })
+            self.assertTrue(session.wait_for_messages(2, timeout=2.0), session.capture.raw())
+            _assert_action_result(self, session.messages()[1], "req-after-long", True)
+        finally:
+            session.close()
 
 
 if __name__ == "__main__":
