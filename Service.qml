@@ -35,4 +35,10 @@ QtObject {
   property HelperBridge bridge: HelperBridge {
     helperPath: root.helperPath
   }
+
+  readonly property var grouped: model.grouped
+
+  property ShepherdModel model: ShepherdModel {
+    agents: bridge.agents
+  }
 }
