@@ -5,7 +5,15 @@ import Quickshell.Io
 QtObject {
   id: root
 
-  property string helperPath: ""
+  // Plugin root directory (manifest.__sourceDir). Process runs
+  //   python3 -m helper.shepherd_helper
+  // with workingDirectory set to this path.
+  property string pluginRoot: ""
+
+  // Retained for Service/public API compatibility: path to the helper module file.
+  readonly property string helperPath: nonemptyString(pluginRoot)
+    ? (pluginRoot.replace(/\/+$/, "") + "/helper/shepherd_helper.py")
+    : ""
 
   property string connection: "disconnected"
   property bool stale: true
@@ -130,10 +138,12 @@ QtObject {
   }
 
   function start() {
-    if (root.helperPath === "") return
+    if (!nonemptyString(root.pluginRoot)) return
     if (helperProc.running) return
     if (restartTimer.running) return
-    helperProc.command = ["python3", root.helperPath]
+    // Quickshell.Io.Process: argv list + workingDirectory (no shell).
+    helperProc.workingDirectory = root.pluginRoot.replace(/\/+$/, "")
+    helperProc.command = ["python3", "-m", "helper.shepherd_helper"]
     helperProc.running = true
   }
 
@@ -254,20 +264,20 @@ QtObject {
 
   function scheduleRestart() {
     if (root.expectedStop) return
-    if (root.helperPath === "") return
+    if (!nonemptyString(root.pluginRoot)) return
     if (restartTimer.running) return
     restartTimer.interval = root.restartDelayMs
     restartTimer.start()
     root.restartDelayMs = Math.min(root.restartDelayMs * 2, 30000)
   }
 
-  onHelperPathChanged: {
-    if (root.helperPath === "") stop()
+  onPluginRootChanged: {
+    if (!nonemptyString(root.pluginRoot)) stop()
     else start()
   }
 
   Component.onCompleted: {
-    if (root.helperPath !== "") start()
+    if (nonemptyString(root.pluginRoot)) start()
   }
 
   Component.onDestruction: {

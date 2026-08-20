@@ -16,6 +16,8 @@ QtObject {
   // (e.g. Ui/BarIconButton.qml Quickshell.env(...) === "1").
   readonly property bool fixtureMode: Quickshell.env("SHEPHERD_DEV_FIXTURE") === "1"
 
+  // Compatibility path to the helper module file. Process launch uses
+  // pluginSourceDir as workingDirectory with `python3 -m helper.shepherd_helper`.
   readonly property string helperPath: root.pluginSourceDir !== ""
     ? root.pluginSourceDir + "/helper/shepherd_helper.py"
     : ""
@@ -49,9 +51,9 @@ QtObject {
     agents: root.agents
   }
 
-  // In fixture mode, never hand HelperBridge a path so its Process cannot start.
+  // Fixture mode: empty pluginRoot so HelperBridge never starts Process.
   property HelperBridge helperBridge: HelperBridge {
-    helperPath: root.fixtureMode ? "" : root.helperPath
+    pluginRoot: root.fixtureMode ? "" : root.pluginSourceDir
   }
 
   // Outside fixture mode, keep FixtureBridge idle with an empty path.

@@ -1,5 +1,6 @@
 """Shepherd runtime: one-shot RPC plus a dedicated subscribe reader."""
 
+import json
 import sys
 import time
 from threading import Event, Lock, Thread
@@ -16,6 +17,22 @@ from helper.subscribe import SubscribeError, SubscribeSession
 def _diag(message):
     sys.stderr.write("Helper: %s\n" % message)
     sys.stderr.flush()
+
+
+def publication_fingerprint(state, connection, stale):
+    """Canonical fingerprint of a QML-facing state publication.
+
+    Compares normalized agents/counts plus connection/stale only — never raw
+    Herdr event payloads, pane paths, or host-specific fields beyond the
+    documented agent contract already present in ``state``.
+    """
+    payload = {
+        "connection": "connected" if connection == "connected" else "disconnected",
+        "stale": bool(stale),
+        "agents": (state or {}).get("agents", []),
+        "counts": (state or {}).get("counts", {}),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 
 class Helper:
@@ -49,6 +66,8 @@ class Helper:
         self.connected = False
         self.last_state = None
         self.last_pane_ids = ()
+        self._last_published_fp = None
+        self._publish_lock = Lock()
         self._reader_thread = None
         self._debounce_thread = None
         self._debounce_lock = Lock()
@@ -57,7 +76,6 @@ class Helper:
         self._reader_alive = Event()
         self._thread_errors = []
         self.reconnect_backoff = backoff_initial
-
     @property
     def running(self):
         return not self.stop_event.is_set()
@@ -94,6 +112,21 @@ class Helper:
     def focus_agent(self, pane_id):
         return self.rpc.agent_focus(pane_id)
 
+    def publish_state(self, state, connection="connected", stale=False):
+        """Emit a state line only when the QML-facing payload changed.
+
+        Connection/stale transitions always publish (including reconnect with
+        identical agents). Duplicate connected publications after unchanged
+        invalidation snapshots are suppressed.
+        """
+        fp = publication_fingerprint(state, connection, stale)
+        with self._publish_lock:
+            if fp == self._last_published_fp:
+                return False
+            self._last_published_fp = fp
+        self.ipc.send_state(state, connection=connection, stale=stale)
+        return True
+
     def refresh_snapshot(self, reason="invalidation"):
         generation = self.generation
         if self.stop_event.is_set():
@@ -105,7 +138,7 @@ class Helper:
         self.last_state = state
         self.connected = True
         self.reconnect_backoff = self.backoff_initial
-        self.ipc.send_state(state, connection="connected", stale=False)
+        self.publish_state(state, connection="connected", stale=False)
         pane_ids = pane_ids_from_snapshot(snapshot)
         if pane_ids != self.last_pane_ids and reason != "bootstrap":
             self.last_pane_ids = pane_ids
@@ -118,8 +151,7 @@ class Helper:
     def note_connection_lost(self):
         self.connected = False
         if self.last_state:
-            self.ipc.send_state(self.last_state, connection="disconnected", stale=True)
-
+            self.publish_state(self.last_state, connection="disconnected", stale=True)
     def schedule_invalidation(self):
         if self.stop_event.is_set():
             return
@@ -229,10 +261,13 @@ class Helper:
         self.generation += 1
         self.subscribe.close()
         if self.last_state:
-            self.ipc.send_state(self.last_state, connection="disconnected", stale=True)
+            self.publish_state(self.last_state, connection="disconnected", stale=True)
         else:
-            self.ipc.send_state({"agents": [], "counts": {"total": 0}}, connection="disconnected", stale=True)
-
+            self.publish_state(
+                {"agents": [], "counts": {"working": 0, "blocked": 0, "done": 0, "idle": 0, "unknown": 0, "total": 0}},
+                connection="disconnected",
+                stale=True,
+            )
     def _interruptible_backoff(self):
         delay = self.reconnect_backoff
         self.reconnect_backoff = min(self.reconnect_backoff * 2, self.backoff_max)

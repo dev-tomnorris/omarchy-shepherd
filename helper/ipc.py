@@ -113,12 +113,16 @@ class HelperIPC:
             try:
                 chunk = os.read(fd, 4096)
             except OSError:
+                self.running = False
+                self._stop_helper_on_eof()
                 return
             if not chunk:
                 pending += decoder.decode(b"", final=True)
                 pending = _reject_oversized_pending(self, pending)
                 if pending.strip():
                     self._handle_line(pending)
+                self.running = False
+                self._stop_helper_on_eof()
                 return
             pending += decoder.decode(chunk)
 
@@ -131,8 +135,22 @@ class HelperIPC:
                     return
                 continue
             if not line:
+                self.running = False
+                self._stop_helper_on_eof()
                 return
             self._handle_line(line)
+
+    def _stop_helper_on_eof(self):
+        # QML Process closes stdin on stop; exit the helper session cleanly.
+        helper = self.helper
+        if helper is None:
+            return
+        stop = getattr(helper, "stop", None)
+        if callable(stop):
+            try:
+                stop()
+            except Exception:
+                pass
 
     def _handle_line(self, line):
         line = line.strip()

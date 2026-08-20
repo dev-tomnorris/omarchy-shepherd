@@ -72,13 +72,21 @@ class TestHelperRuntime(unittest.TestCase):
 
     def test_burst_events_one_debounced_refresh(self):
         before = len(self.server.rpc_records())
+        before_states = len(self.sink.of_type("state"))
         for _ in range(5):
             self.server.push_lifecycle("pane_focused", {"type": "pane_focused", "pane_id": "w1:p1", "workspace_id": "w1"})
-        self.assertTrue(wait_until(lambda: len(self.sink.of_type("state")) >= 2, timeout=2.0))
+        self.assertTrue(
+            wait_until(
+                lambda: len([r for r in self.server.rpc_records() if r.methods == ["session.snapshot"]])
+                >= before + 1,
+                timeout=2.0,
+            )
+        )
         time.sleep(0.15)
         snapshot_rpcs = [r for r in self.server.rpc_records() if r.methods == ["session.snapshot"]]
         self.assertEqual(len(snapshot_rpcs), before + 1)
-        self.assertEqual(len(self.sink.of_type("state")), 2)
+        # Unchanged normalized state must not re-publish.
+        self.assertEqual(len(self.sink.of_type("state")), before_states)
 
     def test_focus_uses_separate_rpc_connection(self):
         before = len(self.server.rpc_records())
