@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 
 QtObject {
   id: root
@@ -10,35 +11,51 @@ QtObject {
     var dir = root.manifest && root.manifest.__sourceDir
     return dir ? String(dir) : ""
   }
+
+  // Exact string "1" only — matches installed Omarchy env checks
+  // (e.g. Ui/BarIconButton.qml Quickshell.env(...) === "1").
+  readonly property bool fixtureMode: Quickshell.env("SHEPHERD_DEV_FIXTURE") === "1"
+
   readonly property string helperPath: root.pluginSourceDir !== ""
     ? root.pluginSourceDir + "/helper/shepherd_helper.py"
     : ""
 
-  readonly property alias connection: bridge.connection
-  readonly property alias stale: bridge.stale
-  readonly property alias agents: bridge.agents
-  readonly property alias counts: bridge.counts
-  readonly property alias helperRunning: bridge.helperRunning
-  readonly property alias helperCrashed: bridge.helperCrashed
-  readonly property alias pendingFocus: bridge.pendingFocus
-  readonly property alias lastActionError: bridge.lastActionError
-  readonly property alias lastProtocolError: bridge.lastProtocolError
+  readonly property string fixturePath: root.pluginSourceDir !== ""
+    ? root.pluginSourceDir + "/tests/fixtures/normalized_state.json"
+    : ""
+
+  readonly property var activeBridge: root.fixtureMode ? fixtureBridge : helperBridge
+
+  readonly property string connection: activeBridge.connection
+  readonly property bool stale: activeBridge.stale
+  readonly property var agents: activeBridge.agents
+  readonly property var counts: activeBridge.counts
+  readonly property bool helperRunning: activeBridge.helperRunning
+  readonly property bool helperCrashed: activeBridge.helperCrashed
+  readonly property var pendingFocus: activeBridge.pendingFocus
+  readonly property var lastActionError: activeBridge.lastActionError
+  readonly property var lastProtocolError: activeBridge.lastProtocolError
+  readonly property var grouped: model.grouped
 
   function focus(paneId) {
-    return bridge.focus(paneId)
+    return activeBridge.focus(paneId)
   }
 
   function refresh() {
-    return bridge.refresh()
+    return activeBridge.refresh()
   }
-
-  property HelperBridge bridge: HelperBridge {
-    helperPath: root.helperPath
-  }
-
-  readonly property var grouped: model.grouped
 
   property ShepherdModel model: ShepherdModel {
-    agents: bridge.agents
+    agents: root.agents
+  }
+
+  // In fixture mode, never hand HelperBridge a path so its Process cannot start.
+  property HelperBridge helperBridge: HelperBridge {
+    helperPath: root.fixtureMode ? "" : root.helperPath
+  }
+
+  // Outside fixture mode, keep FixtureBridge idle with an empty path.
+  property FixtureBridge fixtureBridge: FixtureBridge {
+    fixturePath: root.fixtureMode ? root.fixturePath : ""
   }
 }
