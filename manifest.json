@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "dev.tomnorris.shepherd",
+  "name": "Shepherd",
+  "version": "0.1.0",
+  "author": "Tom Norris",
+  "description": "Monitor and control Herdr agents",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Shepherd",
+    "category": "Agents",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
