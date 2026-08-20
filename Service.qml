@@ -1,8 +1,7 @@
 import QtQuick
 
-Item {
+QtObject {
   id: root
-  visible: false
 
   property var shell: null
   property var manifest: null
@@ -15,17 +14,25 @@ Item {
     ? root.pluginSourceDir + "/helper/shepherd_helper.py"
     : ""
 
-  property string connection: "disconnected"
-  property bool stale: true
-  property var agents: []
-  property var counts: ({
-    working: 0,
-    blocked: 0,
-    done: 0,
-    idle: 0,
-    unknown: 0,
-    total: 0
-  })
-  property bool helperRunning: false
-  property bool helperCrashed: false
+  readonly property alias connection: bridge.connection
+  readonly property alias stale: bridge.stale
+  readonly property alias agents: bridge.agents
+  readonly property alias counts: bridge.counts
+  readonly property alias helperRunning: bridge.helperRunning
+  readonly property alias helperCrashed: bridge.helperCrashed
+  readonly property alias pendingFocus: bridge.pendingFocus
+  readonly property alias lastActionError: bridge.lastActionError
+  readonly property alias lastProtocolError: bridge.lastProtocolError
+
+  function focus(paneId) {
+    return bridge.focus(paneId)
+  }
+
+  function refresh() {
+    return bridge.refresh()
+  }
+
+  property HelperBridge bridge: HelperBridge {
+    helperPath: root.helperPath
+  }
 }
