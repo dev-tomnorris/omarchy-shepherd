@@ -9,6 +9,11 @@ Column {
   property var tabs: []
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property bool serviceReady: false
+  property bool focusBusy: false
+  property string pendingPaneId: ""
+
+  signal focusRequested(string paneId)
 
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(8)
@@ -36,6 +41,10 @@ Column {
       agents: modelData.agents
       foreground: root.foreground
       fontFamily: root.fontFamily
+      serviceReady: root.serviceReady
+      focusBusy: root.focusBusy
+      pendingPaneId: root.pendingPaneId
+      onFocusRequested: function(paneId) { root.focusRequested(paneId) }
     }
   }
 }

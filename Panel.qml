@@ -19,6 +19,18 @@ Panel {
   readonly property bool hasGrouped: !!(shepherd && shepherd.grouped && shepherd.grouped.length > 0)
   readonly property var groupedModel: hasGrouped ? shepherd.grouped : []
 
+  readonly property bool serviceReady: !!(shepherd
+    && shepherd.connection === "connected"
+    && shepherd.stale === false
+    && !shepherd.helperCrashed)
+  readonly property bool focusBusy: !!(shepherd && shepherd.pendingFocus)
+  readonly property string pendingPaneId: {
+    if (!shepherd || !shepherd.pendingFocus) return ""
+    var paneId = shepherd.pendingFocus.paneId
+    return typeof paneId === "string" ? paneId : ""
+  }
+  readonly property bool showFocusError: !!(shepherd && shepherd.lastActionError)
+
   readonly property string heroMeta: {
     if (!shepherd) return "Service unavailable"
     if (shepherd.helperCrashed) return "Shepherd helper is restarting"
@@ -26,6 +38,17 @@ Panel {
     if (shepherd.connection === "disconnected" && !hasAgents) return "Herdr is not running"
     if (!hasGrouped) return "No agents detected"
     return "Service ready"
+  }
+
+  function requestFocus(paneId) {
+    if (!shepherd) return
+    if (typeof shepherd.focus !== "function") return
+    if (shepherd.connection !== "connected") return
+    if (shepherd.stale) return
+    if (shepherd.helperCrashed) return
+    if (shepherd.pendingFocus) return
+    if (typeof paneId !== "string" || paneId.trim() === "") return
+    shepherd.focus(paneId)
   }
 
   implicitWidth: button.implicitWidth
@@ -114,6 +137,17 @@ Panel {
             foreground: root.foreground
           }
 
+          Text {
+            id: focusErrorText
+            visible: root.showFocusError
+            width: parent.width
+            text: "Unable to focus pane."
+            color: Color.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
           Column {
             id: hierarchyColumn
             visible: root.hasGrouped
@@ -131,6 +165,10 @@ Panel {
                 tabs: modelData.tabs
                 foreground: root.foreground
                 fontFamily: root.fontFamily
+                serviceReady: root.serviceReady
+                focusBusy: root.focusBusy
+                pendingPaneId: root.pendingPaneId
+                onFocusRequested: function(paneId) { root.requestFocus(paneId) }
               }
             }
           }

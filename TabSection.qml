@@ -9,6 +9,11 @@ Column {
   property var agents: []
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property bool serviceReady: false
+  property bool focusBusy: false
+  property string pendingPaneId: ""
+
+  signal focusRequested(string paneId)
 
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(6)
@@ -37,6 +42,10 @@ Column {
       agent: modelData
       foreground: root.foreground
       fontFamily: root.fontFamily
+      serviceReady: root.serviceReady
+      focusBusy: root.focusBusy
+      pendingPaneId: root.pendingPaneId
+      onActivateRequested: function(paneId) { root.focusRequested(paneId) }
     }
   }
 }
