@@ -10,6 +10,7 @@ Panel {
   ipcTarget: "dev.tomnorris.shepherd"
   manageIpc: false
 
+  readonly property var shepherd: bar?.shell?.serviceFor("dev.tomnorris.shepherd")
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -64,7 +65,7 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Shepherd"
-          meta: "Agent monitoring will appear here"
+          meta: root.shepherd ? "Service ready" : "Service unavailable"
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
