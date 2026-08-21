@@ -4,7 +4,7 @@ This checklist separates generic local gates from Omarchy-machine-only gates and
 
 Generic runners are expected to run only the generic section. They are **not** expected to run Omarchy, Wayland, or live Herdr gates.
 
-**Release context:** Application behavior for v0.1.0 was verified at merged public `main` commit `e55ee38`. This branch (`chore/v0.1.0-release`) contains documentation-only release finalization and does not change application code.
+**Release context:** Application behavior for v0.1.0 was verified at merged public `main` commit `e55ee38`. Annotated tag `v0.1.0` permanently points to `a9157c333186345f45c49fd121ca415e482d79ed` (release-finalization documentation merge). This file is a **post-release record on `main`**; updating it does **not** modify the immutable `v0.1.0` tag.
 
 ## Generic automated/local gates
 
@@ -78,7 +78,7 @@ Run only when intentionally opted in. Never against the default Herdr session.
 
 ## Final release gates
 
-Pre-tag verification above is complete for application behavior at `e55ee38`. Documentation-only release finalization is on this branch. The following remain pending:
+Pre-tag verification above is complete for application behavior at `e55ee38`. Release-finalization documentation and publication for `v0.1.0` are complete. Evidence below is a post-release record on `main` and does not change the immutable `v0.1.0` tag.
 
 ### Documentation and metadata
 
@@ -91,15 +91,17 @@ Pre-tag verification above is complete for application behavior at `e55ee38`. Do
 - [x] Herdr persistence and one-helper/no-error final state confirmed
 - [x] manifest / CHANGELOG / intended tag version consistency (`0.1.0`)
 - [x] Known limitations reviewed and consistent with README
-- [x] CHANGELOG dated `[0.1.0] - 2026-08-21` (tag/release not published yet)
+- [x] CHANGELOG dated `[0.1.0] - 2026-08-21`
 - [x] README status, requirements, and lifecycle commands reviewed
-- [ ] Merge this release-finalization documentation
+- [x] Merge this release-finalization documentation — PR #5 merged into `main`; tagged commit `a9157c333186345f45c49fd121ca415e482d79ed`
 
 ### Tag and release
 
-- [ ] Create and push annotated `v0.1.0` tag
-- [ ] Publish the GitHub Release (body derived from CHANGELOG `[0.1.0]` section)
-- [ ] Verify the published tag/release page
+- [x] Create and push annotated `v0.1.0` tag — permanently points to `a9157c333186345f45c49fd121ca415e482d79ed`
+- [x] Publish the GitHub Release (body derived from CHANGELOG `[0.1.0]` section) —
+  https://github.com/dev-tomnorris/omarchy-shepherd/releases/tag/v0.1.0
+  Name: Shepherd v0.1.0; draft: false; prerelease: false; marked as latest; published 2026-08-21; expected release sections verified
+- [x] Verify the published tag/release page — public tag and Release page confirmed; installed plugin HEAD, `origin/main`, and tagged commit all matched `a9157c3` after synchronization; installed plugin remained enabled; exactly one helper running; no Shepherd/QML warnings or errors; `SUPER + CTRL + G` still worked
 
 ---
 
