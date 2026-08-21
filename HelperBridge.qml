@@ -168,6 +168,8 @@ QtObject {
       pane_id: paneId
     })
     if (written === "") return ""
+    // Clear prior action error when a new focus request is accepted (request-start).
+    root.lastActionError = null
     root.pendingFocus = { requestId: requestId, paneId: paneId }
     return requestId
   }
@@ -227,8 +229,14 @@ QtObject {
   function applyError(msg) {
     var requestId = msg.request_id
     setProtocolError(msg.code, nonemptyString(msg.message) ? msg.message : "Helper error", requestId)
-    if (root.pendingFocus && root.pendingFocus.requestId === requestId)
+    if (root.pendingFocus && root.pendingFocus.requestId === requestId) {
+      // Fixed copy only — never surface protocol/helper message text to the panel.
+      root.lastActionError = {
+        requestId: requestId,
+        message: "Unable to focus pane."
+      }
       root.pendingFocus = null
+    }
     if (root.pendingRefresh && root.pendingRefresh.requestId === requestId)
       root.pendingRefresh = null
   }
