@@ -6,17 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project does not strictly adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 until a stable 1.0.0 release is tagged.
 
-When v0.1.0 is tagged, replace `Release candidate` below with the tag date (`YYYY-MM-DD`).
-
 ## [Unreleased]
 
-Pending Phase 3 work before the v0.1.0 tag:
+## [0.1.0] - 2026-08-21
 
-- Clean-install release gate from public GitHub `main`
-
-## [0.1.0] - Release candidate
-
-Release-candidate summary of capabilities already merged and verified. Not tagged or released yet.
+Shepherd v0.1.0 implements Phases 0–3 (monitor, focus, managed-client presentation, and public-release polish). Application behavior was verified at merged main commit `e55ee38`.
 
 ### Added
 
@@ -47,3 +41,6 @@ Release-candidate summary of capabilities already merged and verified. Not tagge
 - A detached-but-still-open Shepherd-managed terminal is raised by app ID without reattach; close that window to restore automatic launch/attach
 - Herdr panes may lack compositor session variables; launch ownership stays with Omarchy `bar.run` in the graphical shell
 - Positional `SUPER + CTRL + <number>` panel shortcuts depend on bar-widget order and are not a stable Shepherd binding
+
+[Unreleased]: https://github.com/dev-tomnorris/omarchy-shepherd/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/dev-tomnorris/omarchy-shepherd/releases/tag/v0.1.0

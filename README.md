@@ -6,7 +6,7 @@ Shepherd is an Omarchy shell plugin that monitors Herdr agents, focuses agent pa
 **Plugin ID:** `dev.tomnorris.shepherd`  
 **Tagline:** Keep watch over your Herdr flock.
 
-> **Status:** Phases 0–2 and managed-client presentation are implemented. Phase 3 / public-release polish is in progress. **v0.1.0 is a release candidate** — usable when installed as an Omarchy plugin, but not yet tagged or released.
+> **Status:** Shepherd v0.1.0 implements Phases 0–3. Phases 0–3 are complete: monitoring, focus, managed-client presentation, and public-release polish have been implemented and release-validated.
 
 ## Capabilities
 
@@ -162,11 +162,9 @@ omarchy plugin add https://github.com/dev-tomnorris/omarchy-shepherd.git --enabl
 
 ## Roadmap
 
-### Phase 3 — Public-release polish (in progress)
+### Phases 0–3 — Complete (v0.1.0)
 
-- Clean-install release gate from public GitHub `main`
-
-Keyboard navigation, optional keyboard opening docs, successful-presentation panel close, and tooltip/hero status copy are implemented.
+Monitoring, focus, managed-client presentation, keyboard navigation, optional keyboard opening docs, successful-presentation panel close, tooltip/hero status copy, and public clean-install validation are complete in Shepherd v0.1.0.
 
 ### Later
 
