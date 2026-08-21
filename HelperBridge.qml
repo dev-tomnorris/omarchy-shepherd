@@ -10,6 +10,8 @@ QtObject {
   // with workingDirectory set to this path.
   property string pluginRoot: ""
 
+  property Presentation presentationUtil: Presentation {}
+
   // Retained for Service/public API compatibility: path to the helper module file.
   readonly property string helperPath: nonemptyString(pluginRoot)
     ? (pluginRoot.replace(/\/+$/, "") + "/helper/shepherd_helper.py")
@@ -26,10 +28,13 @@ QtObject {
     unknown: 0,
     total: 0
   })
+  property var presentation: presentationUtil.unsupportedDescriptor()
   property bool helperCrashed: false
   property var pendingFocus: null
   property var lastActionError: null
   property var lastProtocolError: null
+
+  signal focusSucceeded(string paneId)
 
   readonly property bool helperRunning: helperProc.running
 
@@ -194,6 +199,8 @@ QtObject {
     root.stale = nextStale
     root.agents = sanitizeAgents(msg.agents)
     root.counts = sanitizeCounts(msg.counts)
+    // Isolated copy — never alias the parsed message or its argv.
+    root.presentation = presentationUtil.sanitize(msg.presentation)
     root.helperCrashed = false
     root.restartDelayMs = 1000
   }
@@ -207,10 +214,16 @@ QtObject {
           requestId: requestId,
           message: nonemptyString(msg.message) ? msg.message : "Unable to focus pane."
         }
-      } else if (root.lastActionError && root.lastActionError.requestId === requestId) {
-        root.lastActionError = null
+        root.pendingFocus = null
+        return
       }
+      // Focus success: capture → clear pending → clear matching error → emit once.
+      var paneId = root.pendingFocus.paneId
       root.pendingFocus = null
+      if (root.lastActionError && root.lastActionError.requestId === requestId)
+        root.lastActionError = null
+      if (nonemptyString(paneId))
+        root.focusSucceeded(String(paneId).trim())
       return
     }
     if (root.pendingRefresh && root.pendingRefresh.requestId === requestId) {

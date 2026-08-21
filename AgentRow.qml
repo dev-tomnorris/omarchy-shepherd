@@ -13,6 +13,8 @@ Item {
   property bool serviceReady: false
   // Any in-flight focus request (all rows disabled while true).
   property bool focusBusy: false
+  // Presentation launch cooldown (rows non-activatable; not "Focusing…").
+  property bool presentationBusy: false
   property string pendingPaneId: ""
 
   signal activateRequested(string paneId)
@@ -24,7 +26,7 @@ Item {
   }
   readonly property bool hasPaneId: paneId.trim() !== ""
   readonly property bool isPending: focusBusy && hasPaneId && pendingPaneId === paneId
-  readonly property bool canActivate: serviceReady && !focusBusy && hasPaneId
+  readonly property bool canActivate: serviceReady && !focusBusy && !presentationBusy && hasPaneId
 
   readonly property string statusKey: {
     var status = (agent && agent.status) ? String(agent.status).toLowerCase() : "unknown"
