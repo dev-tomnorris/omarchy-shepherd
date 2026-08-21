@@ -13,8 +13,12 @@ Column {
   property bool focusBusy: false
   property bool presentationBusy: false
   property string pendingPaneId: ""
+  property string selectedPaneId: ""
+  property bool cursorActive: false
 
   signal focusRequested(string paneId)
+  signal pointerSelectRequested(string paneId)
+  signal ensureVisibleRequested(var item)
 
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(6)
@@ -47,7 +51,13 @@ Column {
       focusBusy: root.focusBusy
       presentationBusy: root.presentationBusy
       pendingPaneId: root.pendingPaneId
+      keyboardSelected: root.cursorActive
+                     && root.selectedPaneId !== ""
+                     && typeof modelData.pane_id === "string"
+                     && modelData.pane_id === root.selectedPaneId
       onActivateRequested: function(paneId) { root.focusRequested(paneId) }
+      onPointerSelectRequested: function(paneId) { root.pointerSelectRequested(paneId) }
+      onEnsureVisibleRequested: function(item) { root.ensureVisibleRequested(item) }
     }
   }
 }

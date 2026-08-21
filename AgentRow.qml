@@ -3,6 +3,8 @@ import qs.Commons
 import qs.Ui
 
 // Interactive agent row. Emits activateRequested(paneId); Panel owns Service.focus().
+// Keyboard/mouse cursor chrome follows Omarchy CursorSurface: hasCursor comes from
+// panel-owned keyboardSelected, never from containsMouse.
 Item {
   id: root
 
@@ -16,8 +18,12 @@ Item {
   // Presentation launch cooldown (rows non-activatable; not "Focusing…").
   property bool presentationBusy: false
   property string pendingPaneId: ""
+  // Panel-owned keyboard/mouse cursor highlight (CursorSurface.hasCursor).
+  property bool keyboardSelected: false
 
   signal activateRequested(string paneId)
+  signal pointerSelectRequested(string paneId)
+  signal ensureVisibleRequested(var item)
 
   readonly property bool isFocused: !!(agent && agent.focused === true)
   readonly property string paneId: {
@@ -68,7 +74,15 @@ Item {
   Accessible.role: Accessible.Button
   Accessible.name: displayName + ", " + actionStatusText
   Accessible.description: canActivate ? "Request focus" : (isPending ? "Focus pending" : "Unavailable")
+  Accessible.focusable: hasPaneId
+  Accessible.focused: keyboardSelected
+  Accessible.selected: keyboardSelected
   Accessible.onPressAction: root.tryActivate()
+
+  onKeyboardSelectedChanged: {
+    if (keyboardSelected)
+      root.ensureVisibleRequested(root)
+  }
 
   function tryActivate() {
     if (!canActivate) return
@@ -79,18 +93,23 @@ Item {
     id: chrome
     anchors.fill: parent
     foreground: root.foreground
-    hasCursor: mouseArea.containsMouse && (root.canActivate || root.isPending)
+    hasCursor: root.keyboardSelected
     current: root.isFocused && !root.isPending
-    opacity: (root.canActivate || root.isPending || root.isFocused) ? 1.0 : 0.55
+    opacity: (root.canActivate || root.isPending || root.isFocused || root.keyboardSelected) ? 1.0 : 0.55
   }
 
   MouseArea {
     id: mouseArea
     anchors.fill: parent
     hoverEnabled: true
+    // Hover always updates panel cursor (Omarchy bluetooth/network pattern).
+    // Clicks only activate when canActivate (tryActivate also guards).
     acceptedButtons: Qt.LeftButton
-    enabled: root.canActivate
     cursorShape: root.canActivate ? Qt.PointingHandCursor : Qt.ArrowCursor
+    onContainsMouseChanged: {
+      if (containsMouse && root.hasPaneId)
+        root.pointerSelectRequested(root.paneId.trim())
+    }
     onClicked: root.tryActivate()
   }
 
@@ -131,7 +150,8 @@ Item {
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
-        font.bold: root.isFocused || root.isPending
+        // Bold distinguishes keyboard cursor / focus / pending from plain hover fill.
+        font.bold: root.isFocused || root.isPending || root.keyboardSelected
         elide: Text.ElideRight
       }
 

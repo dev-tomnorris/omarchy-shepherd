@@ -13,8 +13,12 @@ Column {
   property bool focusBusy: false
   property bool presentationBusy: false
   property string pendingPaneId: ""
+  property string selectedPaneId: ""
+  property bool cursorActive: false
 
   signal focusRequested(string paneId)
+  signal pointerSelectRequested(string paneId)
+  signal ensureVisibleRequested(var item)
 
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(8)
@@ -46,7 +50,11 @@ Column {
       focusBusy: root.focusBusy
       presentationBusy: root.presentationBusy
       pendingPaneId: root.pendingPaneId
+      selectedPaneId: root.selectedPaneId
+      cursorActive: root.cursorActive
       onFocusRequested: function(paneId) { root.focusRequested(paneId) }
+      onPointerSelectRequested: function(paneId) { root.pointerSelectRequested(paneId) }
+      onEnsureVisibleRequested: function(item) { root.ensureVisibleRequested(item) }
     }
   }
 }
