@@ -103,8 +103,8 @@ AgentRow.activateRequested(paneId)
   → Presentation.presentAfterFocus
       service gates + sanitize
       Util.shellQuote every token
-      exactly one bar.run(...)
-  → omarchy-launch-or-focus-tui --app-id=<id> <argv…>
+      exactly one bar.run(...) when supported
+  → only if launched === true: start three-second cooldown, close panel once
 ```
 
 ### Why `lastFocusSuccess` instead of a custom signal
@@ -136,13 +136,24 @@ Omarchy deduplicates by dedicated terminal app ID. Shepherd does not track windo
 - If the managed window remains open after detach, `omarchy-launch-or-focus-tui` still raises that app-ID window (often an ordinary shell) and does not automatically reattach. Closing the detached managed window restores automatic launch/attach.
 - A manually launched Herdr terminal without Shepherd’s app ID is outside the dedup set, so the first Shepherd presentation may open one additional managed client.
 
-### Cooldown and errors
+### Presentation success, close, and cooldown
 
-- After a real `bar.run` success path, a three-second presentation cooldown disables all agent rows without showing `Focusing…`.
-- Focus failures use only `Unable to focus pane.`
-- Unsupported presentation uses only `Open Herdr manually for this session.`
-- Missing `bar.run` / launch exceptions use only `Unable to open Herdr.`
-- New valid focus activation clears a prior presentation message; successful presentation clears it.
+Phase 3 contract for managed presentation after focus:
+
+1. Panel captures the request ID returned by `focus()`.
+2. A matching `lastFocusSuccess` permits presentation (`tryConsumeFocusSuccess`).
+3. Presentation validates the sanitized descriptor and calls `bar.run` when supported.
+4. Only when presentation returns `launched: true`: restart the three-second presentation cooldown and close the Shepherd panel once.
+5. Unsupported presentation, missing/non-callable `bar.run`, launcher failure, focus failure, unmatched/duplicate completion, fixture mode, and stale/disconnected/crashed state leave the panel open with fixed sanitized status/error copy.
+6. Reopening during cooldown shows `Opening Herdr…`; activation stays disabled (not `Focusing…`).
+
+Fixed user-facing presentation/focus copy:
+
+- Focus failures: `Unable to focus pane.`
+- Unsupported presentation: `Open Herdr manually for this session.`
+- Missing `bar.run` / launch exceptions: `Unable to open Herdr.`
+
+New valid focus activation clears a prior presentation message; successful presentation clears it.
 
 Guards before calling `shepherd.focus`:
 

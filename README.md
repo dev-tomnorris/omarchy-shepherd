@@ -116,11 +116,11 @@ Positional `SUPER + CTRL + <number>` panel shortcuts may also work, but they are
 
 ### Herdr not running
 
-Shepherd shows `Helper not running. Start a Herdr 0.8.x session.` Check that Herdr is running with the expected socket path.
+Shepherd shows `Herdr is not running`. Check that Herdr is running with the expected socket path.
 
 ### Helper restarting
 
-Transient connection failures trigger a restart with exponential backoff. The panel briefly shows `Helper restarting…` before the connection returns.
+Transient connection failures trigger a restart with exponential backoff. The panel briefly shows `Shepherd helper is restarting` before the connection returns.
 
 ### Arbitrary socket override
 
