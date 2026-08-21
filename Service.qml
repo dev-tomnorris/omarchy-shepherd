@@ -32,11 +32,13 @@ QtObject {
   readonly property bool stale: activeBridge.stale
   readonly property var agents: activeBridge.agents
   readonly property var counts: activeBridge.counts
+  readonly property var presentation: activeBridge.presentation
   readonly property bool helperRunning: activeBridge.helperRunning
   readonly property bool helperCrashed: activeBridge.helperCrashed
   readonly property var pendingFocus: activeBridge.pendingFocus
   readonly property var lastActionError: activeBridge.lastActionError
   readonly property var lastProtocolError: activeBridge.lastProtocolError
+  readonly property var lastFocusSuccess: activeBridge.lastFocusSuccess
   readonly property var grouped: model.grouped
 
   function focus(paneId) {

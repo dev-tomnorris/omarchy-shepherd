@@ -6,6 +6,8 @@ QtObject {
 
   property string fixturePath: ""
 
+  property Presentation presentationUtil: Presentation {}
+
   property string connection: "disconnected"
   property bool stale: true
   property var agents: []
@@ -17,11 +19,15 @@ QtObject {
     unknown: 0,
     total: 0
   })
+  // Fixture mode never requests terminal presentation.
+  property var presentation: presentationUtil.unsupportedDescriptor()
   property bool helperRunning: false
   property bool helperCrashed: false
   property var pendingFocus: null
   property var lastActionError: null
   property var lastProtocolError: null
+  // Fixture never produces focus-success completions.
+  property var lastFocusSuccess: null
 
   property int requestSeq: 0
   property bool loadPending: false
@@ -75,6 +81,7 @@ QtObject {
     root.stale = true
     root.agents = emptyAgents()
     root.counts = emptyCounts()
+    root.presentation = presentationUtil.unsupportedDescriptor()
     root.pendingFocus = null
     root.lastActionError = null
     root.lastProtocolError = {

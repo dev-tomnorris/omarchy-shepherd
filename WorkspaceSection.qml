@@ -11,6 +11,7 @@ Column {
   property string fontFamily: Style.font.family
   property bool serviceReady: false
   property bool focusBusy: false
+  property bool presentationBusy: false
   property string pendingPaneId: ""
 
   signal focusRequested(string paneId)
@@ -43,6 +44,7 @@ Column {
       fontFamily: root.fontFamily
       serviceReady: root.serviceReady
       focusBusy: root.focusBusy
+      presentationBusy: root.presentationBusy
       pendingPaneId: root.pendingPaneId
       onFocusRequested: function(paneId) { root.focusRequested(paneId) }
     }

@@ -1,6 +1,6 @@
 # Shepherd Design
 
-Phase 2 architecture as implemented. Wire-level Herdr/IPC details live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
+Architecture as implemented on `feat/herdr-client-attach`. Wire-level Herdr/IPC and presentation schema live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
 
 ## Manifest and ownership
 
@@ -17,12 +17,12 @@ The shell mounts one Shepherd **service** singleton. The bar widget resolves it 
 
 `Service.qml` selects exactly one active bridge:
 
-| Mode | Condition | Bridge | Helper process |
-|------|-----------|--------|----------------|
-| Production | `SHEPHERD_DEV_FIXTURE` unset / not `"1"` | `HelperBridge` | Started |
-| Fixture (dev only) | `SHEPHERD_DEV_FIXTURE=1` | `FixtureBridge` | Never started (`pluginRoot` forced empty) |
+| Mode | Condition | Bridge | Helper process | Presentation launch |
+|------|-----------|--------|----------------|---------------------|
+| Production | `SHEPHERD_DEV_FIXTURE` unset / not `"1"` | `HelperBridge` | Started | After correlated focus success |
+| Fixture (dev only) | `SHEPHERD_DEV_FIXTURE=1` | `FixtureBridge` | Never started (`pluginRoot` forced empty) | Never |
 
-Fixture mode loads `tests/fixtures/normalized_state.json` via `FileView` only. It must not open Herdr sockets or spawn `python3 -m helper.shepherd_helper`.
+Fixture mode loads `tests/fixtures/normalized_state.json` via `FileView` only. It must not open Herdr sockets, spawn `python3 -m helper.shepherd_helper`, or publish a launchable presentation (fixture keeps an unsupported descriptor; `lastFocusSuccess` stays null).
 
 ## Helper process
 
@@ -35,6 +35,8 @@ command = ["python3", "-m", "helper.shepherd_helper"]
 
 Stdin/stdout are JSON Lines. Unexpected exit sets `helperCrashed`, fails pending actions with fixed messages, and schedules a single restart timer (exponential delay, capped). `start()` no-ops while the process or restart timer is already active, so backoff cannot stack duplicate helpers.
 
+Production construction uses `build_helper()`: one frozen environment snapshot drives both `resolve_socket_path` and `build_presentation_descriptor`, then `Helper(socket_path=…, presentation=…)` requires both explicitly. The helper never launches terminals, shells, or Omarchy launchers.
+
 ## Data flow
 
 ```mermaid
@@ -46,12 +48,14 @@ flowchart LR
   HelperBridge -->|JSONL| Helper[helper.shepherd_helper]
   Helper -->|RPC| HerdrRPC[Herdr one-shot RPC]
   Helper -->|subscribe| HerdrSub[Herdr exclusive subscribe]
+  HelperBridge -->|lastFocusSuccess| Panel
+  Panel -->|Util.shellQuote + bar.run| Omarchy[omarchy-launch-or-focus-tui]
   HelperBridge --> Model[ShepherdModel.grouped]
   FixtureBridge --> Model
   Model --> Panel
 ```
 
-Normalized `state` lines are deduplicated in the helper before stdout publication. Identical agents/counts with the same `connection`/`stale` are suppressed; connection transitions still publish.
+Normalized `state` lines (including sanitized `presentation`) are deduplicated in the helper before stdout publication. Identical agents/counts/presentation with the same `connection`/`stale` are suppressed; connection transitions still publish.
 
 ## QML component hierarchy
 
@@ -60,56 +64,124 @@ Panel.qml
 ├── BarIconButton + KeyboardPanel / PanelKeyCatcher / Flickable
 ├── PanelHero (connection / empty / crash meta)
 ├── StatusSummary (counts)
-├── focus error text (fixed sanitized copy)
+├── panel error text (focus or presentation; fixed sanitized copy)
+├── Presentation.qml (sanitize + presentAfterFocus)
 └── WorkspaceSection[] → TabSection[] → AgentRow[]
 ```
 
 `ShepherdModel` groups agents by workspace then tab without mutating the input `agents` array. Invalid records (missing `pane_id` / workspace / tab) are skipped.
 
-## Focus path
+## Presentation descriptors
+
+Built once per helper process in Python (`helper/presentation.py`), then sanitized again at the IPC boundary and again in QML (`Presentation.qml`).
+
+| Kind | `supported` | Typical source | Launch argv |
+|------|-------------|----------------|-------------|
+| `default` | `true` | No session/socket override, or conventional default socket | `["herdr"]` |
+| `named` | `true` | `HERDR_SESSION`, or conventional `…/sessions/<name>/herdr.sock` | `["herdr", "--session", "<name>"]` |
+| `socket_override` | `false` | Arbitrary / unclassifiable `HERDR_SOCKET_PATH` | `[]` |
+
+Named-session app IDs are deterministic: `org.omarchy.herdr.session-` plus the first 12 hex characters of SHA-256 over the session name (UTF-8). Default app ID is `org.omarchy.herdr`.
+
+Malformed, partial, wrong-type, extra-key, or semantically inconsistent descriptors downgrade to the unsupported shape. Published descriptors never include socket paths or other private fields. See [HERDR-CONTRACT.md](HERDR-CONTRACT.md) for the exact state schema.
+
+## Focus then present
 
 ```text
 AgentRow.activateRequested(paneId)
-  → TabSection.focusRequested
-  → WorkspaceSection.focusRequested
   → Panel.requestFocus
+      captures expectedFocusRequestId from shepherd.focus() return value
   → Service.focus → HelperBridge.focus
   → JSONL {"type":"focus",...}
   → helper → Herdr agent.focus
+  → action_result ok=true for that request_id
+  → HelperBridge.lastFocusSuccess = { requestId, paneId }
+  → Panel.tryConsumeFocusSuccess
+      requires exact expectedFocusRequestId match
+      ignores pre-bind / pre-reload records via ignoredFocusSuccess
+      consumes expectation before launch
+  → Presentation.presentAfterFocus
+      service gates + sanitize
+      Util.shellQuote every token
+      exactly one bar.run(...)
+  → omarchy-launch-or-focus-tui --app-id=<id> <argv…>
 ```
+
+### Why `lastFocusSuccess` instead of a custom signal
+
+Omarchy’s `serviceFor(...)` surface did not reliably expose a custom QML signal from the Shepherd service (observed warning; signal not available to the panel). Completion is therefore a **property** on the service/bridge:
+
+```text
+lastFocusSuccess: { requestId: string, paneId: string } | null
+```
+
+The Panel keeps the request ID it initiated, consumes a matching property change once, and fail-closes on fixture mode, stale/disconnected/crashed service, unrelated or pre-existing records, and matching focus failures (`lastActionError`).
+
+### Command construction
+
+Supported descriptors only. Tokens are always:
+
+1. `omarchy-launch-or-focus-tui`
+2. `--app-id=<sanitized app_id>`
+3. each sanitized `argv` string
+
+Every token is passed through installed `Util.shellQuote`, then joined with spaces, then handed to `bar.run` exactly once. No `Process`, `eval`, custom quoting, or direct untrusted concatenation. Graphical-session environment (including Hyprland) stays with the Omarchy shell; the Python helper does not need a TTY or compositor vars.
+
+### Managed-window lifecycle
+
+Omarchy deduplicates by dedicated terminal app ID. Shepherd does not track window addresses and does not introspect the process running inside a matched window.
+
+- Detaching from Herdr does not stop the persistent server or agents.
+- Closing the visible managed client does not stop the server or agents; the next presentation can create a fresh managed terminal and attach.
+- If the managed window remains open after detach, `omarchy-launch-or-focus-tui` still raises that app-ID window (often an ordinary shell) and does not automatically reattach. Closing the detached managed window restores automatic launch/attach.
+- A manually launched Herdr terminal without Shepherd’s app ID is outside the dedup set, so the first Shepherd presentation may open one additional managed client.
+
+### Cooldown and errors
+
+- After a real `bar.run` success path, a three-second presentation cooldown disables all agent rows without showing `Focusing…`.
+- Focus failures use only `Unable to focus pane.`
+- Unsupported presentation uses only `Open Herdr manually for this session.`
+- Missing `bar.run` / launch exceptions use only `Unable to open Herdr.`
+- New valid focus activation clears a prior presentation message; successful presentation clears it.
 
 Guards before calling `shepherd.focus`:
 
 - service present; `connection === "connected"`; `stale === false`; `!helperCrashed`
 - nonempty trimmed `pane_id`
 - no existing `pendingFocus`
+- presentation cooldown not running
 
-While pending, all rows disable; the matching row shows `Focusing…`. Success clears pending. Failures shown in the panel use the fixed string `Unable to focus pane.` (not request IDs, paths, or exception text). Fixture `focus` returns a request id and clears pending without Process/Herdr I/O.
+While a focus is pending, all rows disable; the matching row shows `Focusing…`.
 
 Panel toggle, Escape close, panel switching, scrolling, 380px content width, and null-service empty states remain as in the Phase 2 panel skeleton.
 
 ## Trust boundaries
 
-- Helper normalizes Herdr snapshots; QML receives only the documented agent/count fields
-- No prompts, pane output, transcripts, or cwd reach the panel contract
+- Helper normalizes Herdr snapshots; QML receives only documented agent/count fields plus sanitized presentation
+- Python and QML each reject malformed presentation independently
+- No prompts, pane output, transcripts, cwd, or socket paths reach the panel contract
 - Helper stderr is one-line sanitized diagnostics only
 - Public docs use fake pane IDs (`w1:p1`); live IDs stay out of documentation
 
-## Detached / no-visible-client limitation
+## Fail-closed paths
 
-`agent.focus` changes focus inside the persistent Herdr **session**. Shepherd does not open a terminal, attach a Herdr client, or raise an existing window. If the user has detached and closed the client terminal, a successful focus may not present the pane. Users must launch/attach Herdr separately for v0.1. This is a presentation limitation, not data loss or a helper crash.
+| Condition | Behavior |
+|-----------|----------|
+| Unsupported / malformed presentation | Focus may still succeed; no launch; fixed manual-open message |
+| Fixture mode | No helper Process; no launch |
+| Stale, disconnected, or helper crash | No launch |
+| Unmatched / duplicate / pre-reload success record | No launch |
+| Focus `action_result` failure or protocol error | No launch; fixed focus error copy |
+| `bar.run` missing or throws | No launch; fixed unable-open message |
 
-### Future design question
-
-Launch or attach a visible Herdr client when activating an agent and no client is available. Later design must cover: detecting a visible client; selecting named vs default session; Omarchy’s supported terminal-launch mechanism; avoiding duplicate windows; ordering attach vs pane focus; safe behavior from panels without an interactive TTY. Do not assume the noninteractive helper should run `herdr agent attach` unless Herdr/Omarchy architecture confirms that path.
-
-## Repository layout (Phase 2)
+## Repository layout
 
 ```text
 manifest.json
 Service.qml / HelperBridge.qml / FixtureBridge.qml / ShepherdModel.qml
-Panel.qml / StatusSummary.qml / WorkspaceSection.qml / TabSection.qml / AgentRow.qml
-helper/          # Phase 1 helper (stdlib)
+Panel.qml / Presentation.qml / StatusSummary.qml
+WorkspaceSection.qml / TabSection.qml / AgentRow.qml
+helper/          # stdlib helper (RPC, subscribe, presentation, IPC)
 tests/           # unit, fake-server, opt-in live integration
 docs/
 ```

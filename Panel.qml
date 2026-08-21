@@ -24,12 +24,20 @@ Panel {
     && shepherd.stale === false
     && !shepherd.helperCrashed)
   readonly property bool focusBusy: !!(shepherd && shepherd.pendingFocus)
+  readonly property bool presentationBusy: presentationCooldown.running
   readonly property string pendingPaneId: {
     if (!shepherd || !shepherd.pendingFocus) return ""
     var paneId = shepherd.pendingFocus.paneId
     return typeof paneId === "string" ? paneId : ""
   }
   readonly property bool showFocusError: !!(shepherd && shepherd.lastActionError)
+  property string presentationMessage: ""
+  readonly property string panelErrorText: {
+    if (presentationMessage !== "") return presentationMessage
+    if (showFocusError) return "Unable to focus pane."
+    return ""
+  }
+  readonly property bool showPanelError: panelErrorText !== ""
 
   readonly property string heroMeta: {
     if (!shepherd) return "Service unavailable"
@@ -40,6 +48,35 @@ Panel {
     return "Service ready"
   }
 
+  property Presentation presentationUtil: Presentation {}
+
+  property Timer presentationCooldown: Timer {
+    interval: presentationUtil.cooldownMs
+    repeat: false
+  }
+
+  // Request ID captured from shepherd.focus(); consumed on matching completion/failure.
+  property string expectedFocusRequestId: ""
+  // Snapshot of lastFocusSuccess at Panel bind/init — never launch from pre-existing records.
+  property var ignoredFocusSuccess: null
+
+  readonly property var lastFocusSuccess: shepherd ? shepherd.lastFocusSuccess : null
+  readonly property var lastActionErrorWatch: shepherd ? shepherd.lastActionError : null
+
+  onShepherdChanged: {
+    // Service swap / plugin reload: fail closed on any in-flight expectation.
+    root.expectedFocusRequestId = ""
+    root.ignoredFocusSuccess = shepherd ? shepherd.lastFocusSuccess : null
+  }
+
+  onLastFocusSuccessChanged: root.tryConsumeFocusSuccess()
+
+  onLastActionErrorWatchChanged: root.clearExpectedOnMatchingFailure()
+
+  Component.onCompleted: {
+    root.ignoredFocusSuccess = shepherd ? shepherd.lastFocusSuccess : null
+  }
+
   function requestFocus(paneId) {
     if (!shepherd) return
     if (typeof shepherd.focus !== "function") return
@@ -47,8 +84,61 @@ Panel {
     if (shepherd.stale) return
     if (shepherd.helperCrashed) return
     if (shepherd.pendingFocus) return
+    if (presentationCooldown.running) return
     if (typeof paneId !== "string" || paneId.trim() === "") return
-    shepherd.focus(paneId)
+    // New valid activation clears prior presentation error.
+    root.presentationMessage = ""
+    var requestId = shepherd.focus(paneId)
+    if (typeof requestId === "string" && requestId !== "")
+      root.expectedFocusRequestId = requestId
+  }
+
+  function clearExpectedOnMatchingFailure() {
+    if (root.expectedFocusRequestId === "") return
+    var err = root.lastActionErrorWatch
+    if (!err || typeof err !== "object") return
+    if (err.requestId === root.expectedFocusRequestId)
+      root.expectedFocusRequestId = ""
+  }
+
+  function tryConsumeFocusSuccess() {
+    if (root.expectedFocusRequestId === "") return
+    if (!shepherd || shepherd.fixtureMode === true) return
+    var rec = root.lastFocusSuccess
+    if (!rec || typeof rec !== "object") return
+    // Never launch a completion that existed before this Panel expected it.
+    if (rec === root.ignoredFocusSuccess) return
+    if (rec.requestId !== root.expectedFocusRequestId) return
+    if (typeof rec.paneId !== "string" || rec.paneId.trim() === "") return
+
+    // Consume before launch so one completion cannot launch twice.
+    root.expectedFocusRequestId = ""
+    root.ignoredFocusSuccess = rec
+    root.presentAfterFocusSuccess(rec.paneId.trim())
+  }
+
+  function presentAfterFocusSuccess(paneId) {
+    if (!shepherd) return
+    if (shepherd.fixtureMode === true) return
+    if (shepherd.connection !== "connected") return
+    if (shepherd.stale === true) return
+    if (shepherd.helperCrashed === true) return
+
+    var result = presentationUtil.presentAfterFocus(root.bar, {
+      connection: shepherd.connection,
+      stale: shepherd.stale,
+      helperCrashed: shepherd.helperCrashed,
+      fixtureMode: shepherd.fixtureMode === true,
+      presentation: shepherd.presentation
+    })
+
+    if (result.launched) {
+      root.presentationMessage = ""
+      presentationCooldown.restart()
+      return
+    }
+    if (result.errorMessage !== "")
+      root.presentationMessage = result.errorMessage
   }
 
   implicitWidth: button.implicitWidth
@@ -138,10 +228,10 @@ Panel {
           }
 
           Text {
-            id: focusErrorText
-            visible: root.showFocusError
+            id: panelErrorTextItem
+            visible: root.showPanelError
             width: parent.width
-            text: "Unable to focus pane."
+            text: root.panelErrorText
             color: Color.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -167,6 +257,7 @@ Panel {
                 fontFamily: root.fontFamily
                 serviceReady: root.serviceReady
                 focusBusy: root.focusBusy
+                presentationBusy: root.presentationBusy
                 pendingPaneId: root.pendingPaneId
                 onFocusRequested: function(paneId) { root.requestFocus(paneId) }
               }

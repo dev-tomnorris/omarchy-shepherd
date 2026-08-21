@@ -8,8 +8,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fakes.fake_herdr import FakeHerdrServer
-from helper.runtime import Helper
-from support import JsonlSink, wait_until
+from support import JsonlSink, make_helper, wait_until
 
 
 class TestHelperRuntime(unittest.TestCase):
@@ -22,8 +21,8 @@ class TestHelperRuntime(unittest.TestCase):
         stdin_r, stdin_w = os.pipe()
         self.stdin_read = os.fdopen(stdin_r)
         self.stdin_write = os.fdopen(stdin_w, "w")
-        self.helper = Helper(
-            socket_path=self.socket_path,
+        self.helper = make_helper(
+            self.socket_path,
             debounce_s=0.08,
             recv_timeout=0.05,
             rpc_timeout=2.0,
