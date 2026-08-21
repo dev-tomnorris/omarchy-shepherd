@@ -1,6 +1,6 @@
 # Shepherd Design
 
-The implemented architecture (Phases 0–2 and managed-client presentation) is on merged main. Phase 3 release polish is in progress toward a v0.1.0 release candidate. Wire-level Herdr/IPC and presentation schema live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
+Shepherd v0.1.0 implements Phases 0–3 on merged main. Release validation is complete for that software version. Wire-level Herdr/IPC and presentation schema live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
 
 ## Manifest and ownership
 
