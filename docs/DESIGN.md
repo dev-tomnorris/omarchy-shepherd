@@ -1,6 +1,6 @@
 # Shepherd Design
 
-Architecture as implemented on `feat/herdr-client-attach`. Wire-level Herdr/IPC and presentation schema live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
+The implemented architecture (Phases 0–2 and managed-client presentation) is on merged main. Phase 3 release polish is in progress toward a v0.1.0 release candidate. Wire-level Herdr/IPC and presentation schema live in [HERDR-CONTRACT.md](HERDR-CONTRACT.md).
 
 ## Manifest and ownership
 

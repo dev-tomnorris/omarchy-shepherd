@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "author": "Tom Norris",
   "description": "Monitor and control Herdr agents",
+  "license": "MIT",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
     "service": "Service.qml",
