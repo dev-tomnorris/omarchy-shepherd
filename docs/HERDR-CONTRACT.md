@@ -1,175 +1,139 @@
 # Herdr Contract
 
-Shepherd targets **Herdr 0.8.0**. This document describes the protocol boundary between Shepherd's helper and Herdr. The QML IPC contract is summarized here; see [DESIGN.md](DESIGN.md) for helper architecture.
+Shepherd targets **Herdr 0.8.x** (verified on **0.8.0**). This document is the helper↔Herdr and QML↔helper contract. UI layout and Omarchy install steps belong in [README.md](../README.md) and [DESIGN.md](DESIGN.md).
 
-## 1. Raw Herdr methods
+## 1. Socket resolution
 
-Shepherd uses these socket RPC methods:
+Implemented in `helper/socket_path.py` (`XDG_CONFIG_HOME` respected):
 
-- `session.snapshot` — bootstrap and refresh data
-- `events.subscribe` — persistent invalidation stream
-- `agent.focus` — focus an agent by pane_id
+1. `HERDR_SOCKET_PATH` when nonempty
+2. else `config_home/herdr/sessions/<HERDR_SESSION>/herdr.sock` when `HERDR_SESSION` nonempty
+3. else `config_home/herdr/herdr.sock`
 
-**Do not use `herdr api subscribe`** — no such command exists.
+`config_home` is nonempty `XDG_CONFIG_HOME`, otherwise `~/.config`. No TCP/TLS. No `HERDR_SOCKET`.
 
-## 2. Transport envelopes
+## 2. Transport ownership
 
-Herdr traffic on the Unix socket uses newline-delimited JSON. Shepherd distinguishes:
+| Channel | Owner | Methods / role |
+|---------|-------|----------------|
+| One-shot RPC | `helper/rpc.py` | Connect → one request → matching response → close. Used for `session.snapshot` and `agent.focus`. Never shares the subscribe socket. |
+| Exclusive subscribe | `helper/subscribe.py` | One persistent `events.subscribe` connection and one reader thread. No concurrent reads; no second request on that socket. |
 
-| Envelope | Direction | Purpose |
-|----------|-----------|---------|
-| One-shot RPC | request/response | `session.snapshot`, `agent.focus` — connect, one request, matching response, close |
-| Subscribe ack | response | `result.type == subscription_started` after `events.subscribe` |
-| Lifecycle push | server → client | `"event": "workspace_created"` (snake_case) with `"data"` payload |
-| Scoped status push | server → client | `"event": "pane.agent_status_changed"` (dotted) with `"data"` payload |
-| `events.wait` | RPC response | `result.type == wait_matched` — **Shepherd does not use `events.wait`** |
+Do **not** use a CLI `herdr api subscribe` path — Shepherd speaks the Unix-socket JSONL API directly.
 
-Lifecycle and scoped pushes are invalidation signals only. Shepherd never applies push payloads to its cache.
+## 3. Invalidation and refresh
 
-## 3. Event strategy
+On startup: `session.snapshot`, then `events.subscribe`.
 
-1. On startup: `session.snapshot` + `events.subscribe`
-2. On each invalidation push: trailing-edge debounce ~100 ms, then fresh `session.snapshot`
-3. Normalize, emit one `state` message to QML
-4. Do not forward raw events to QML
+On each invalidation push: trailing-edge debounce (~100 ms), then a fresh `session.snapshot`. Pushes are never applied to cache and never forwarded to QML.
 
-No event-order guarantees. No gap detection.
+**Unscoped lifecycle subscriptions** (subscribe `type` dotted; push `event` often snake_case):
 
-### Subscribed event types
+- `workspace.created|updated|renamed|moved|reordered|closed|focused`
+- `tab.created|closed|renamed|moved|focused`
+- `pane.created|updated|closed|focused|moved|exited|agent_detected`
 
-**Unscoped lifecycle** (subscription `type` uses dotted form; push `event` uses snake_case):
+**Per-pane status:** one `pane.agent_status_changed` subscription per snapshot `pane_id`. Status changes are not reliable via `pane.updated` alone. When pane membership changes after refresh, Shepherd closes the subscribe socket and opens a new stream.
 
-- `workspace.created`, `workspace.updated`, `workspace.renamed`, `workspace.moved`, `workspace.reordered`, `workspace.closed`, `workspace.focused`
-- `tab.created`, `tab.closed`, `tab.renamed`, `tab.moved`, `tab.focused`
-- `pane.created`, `pane.updated`, `pane.closed`, `pane.focused`, `pane.moved`, `pane.exited`, `pane.agent_detected`
+`events.wait` / `wait_matched` responses are never treated as subscription pushes. No event-order or gap guarantees.
 
-**Scoped per pane** (subscription and push both use dotted form):
+## 4. State publication
 
-- `pane.agent_status_changed` with `pane_id`
+`Helper.publish_state` fingerprints normalized agents/counts plus `connection`/`stale`. Identical fingerprints are suppressed. Connection/stale transitions publish even when agents are unchanged.
 
-### Why per-pane status subscriptions
+## 5. Normalized state fields
 
-Herdr emits `pane.agent_status_changed` only for subscribed pane IDs. Agent status changes do not reliably arrive via `pane.updated`. Shepherd therefore subscribes once per pane in the current snapshot and rebuilds the subscribe stream when pane membership changes.
+Output of `helper/normalize.py`. Fixture: `tests/fixtures/normalized_state.json`.
 
-## 4. Socket connection
+Agent keys only: `pane_id`, `name`, `status`, `focused`, `workspace{id,label,number}`, `tab{id,label,number}`.
 
-**Resolution order (XDG_CONFIG_HOME respected):**
-- `config_home = XDG_CONFIG_HOME when nonempty, otherwise ~/.config`
-- `socket_path = HERDR_SOCKET_PATH when nonempty`
-- `socket_path = config_home/herdr/sessions/HERDR_SESSION/herdr.sock when HERDR_SESSION nonempty`
-- `socket_path = config_home/herdr/herdr.sock (default)`
+Counts always include: `working`, `blocked`, `done`, `idle`, `unknown`, `total`.
 
-No TCP/TLS.
+**Excluded from QML:** pane output, prompts, cwd, terminal IDs, session refs, revisions, layouts, scroll info, raw snapshot blobs.
 
-## 5. Normalized state contract
-
-Output of `helper/normalize.py`. Stable fake fixture: `tests/fixtures/normalized_state.json`.
-
-**Agent record:**
+Example (fake IDs only):
 
 ```json
 {
-  "pane_id": "w1:p1",
-  "name": "dev-agent",
-  "status": "working",
-  "focused": true,
-  "workspace": {"id": "w1", "label": "Development", "number": 1},
-  "tab": {"id": "w1:t1", "label": "src", "number": 1}
+  "type": "state",
+  "connection": "connected",
+  "stale": false,
+  "agents": [{
+    "pane_id": "w1:p1",
+    "name": "dev-agent",
+    "status": "working",
+    "focused": true,
+    "workspace": {"id": "w1", "label": "Development", "number": 1},
+    "tab": {"id": "w1:t1", "label": "src", "number": 1}
+  }],
+  "counts": {"working": 1, "blocked": 0, "done": 0, "idle": 0, "unknown": 0, "total": 1}
 }
 ```
 
-**Counts** (all six keys always present):
+## 6. QML ↔ helper IPC
 
-```json
-{"working":1,"blocked":0,"done":0,"idle":1,"unknown":0,"total":2}
-```
-
-**State message:**
-
-```json
-{"type":"state","connection":"connected","stale":false,"agents":[...],"counts":{...}}
-```
-
-Excluded from QML: cwd, terminal IDs, session refs, revision fields, pane output, prompts, raw snapshots.
-
-## 6. QML IPC commands
-
-**Focus:**
+Commands (stdin JSONL). `request_id` must be a nonempty string. Focus also requires nonempty string `pane_id`:
 
 ```json
 {"type":"focus","request_id":"req-1","pane_id":"w1:p1"}
-```
-
-**Refresh** (triggers one-shot `session.snapshot`):
-
-```json
 {"type":"refresh","request_id":"req-2"}
 ```
 
-Both require `request_id` as a string with at least one non-whitespace character. Focus requires the same for `pane_id`.
+Each input line is capped at **65,536** bytes. Oversized/unterminated lines yield `invalid_json` / `Line too long` without hanging the reader.
 
-## 7. QML IPC responses
-
-**Success:**
+Responses:
 
 ```json
 {"type":"action_result","request_id":"req-1","ok":true}
-```
-
-**Sanitized handler failure:**
-
-```json
 {"type":"action_result","request_id":"req-1","ok":false,"message":"Unable to focus pane."}
 {"type":"action_result","request_id":"req-2","ok":false,"message":"Unable to refresh state."}
-```
-
-**Validation error:**
-
-```json
 {"type":"error","request_id":null,"code":"invalid_json","message":"Malformed JSON"}
-{"type":"error","request_id":"req-1","code":"missing_param","message":"Missing pane_id"}
+{"type":"error","request_id":"req-1","code":"connection_lost","message":"Herdr socket closed"}
 ```
 
 Validation codes: `invalid_json`, `invalid_message`, `missing_param`, `invalid_param`, `unknown_command`.
 
-**Connection loss:**
+Handler failures never copy backend exception text, tracebacks, socket paths, or raw snapshots to stdout. Fixed failure messages only for focus/refresh `action_result` failures.
 
-```json
-{"type":"error","request_id":"req-1","code":"connection_lost","message":"Herdr socket closed"}
-```
+QML correlates `request_id` for pending focus/refresh. Duplicate focus while `pendingFocus` is set is rejected by the bridge.
 
-IPC input lines are limited to 65,536 bytes.
+## 7. Focus semantics (`agent.focus`)
 
-## 8. Connection behavior
+Helper issues one-shot RPC `agent.focus` with an `AgentTarget` (Shepherd always passes `pane_id`).
+
+**Does:**
+
+- Change the focused pane inside the persistent Herdr **session**
+- Can mark agent presentation state as seen (Herdr-side), when the server accepts the request
+
+**Does not guarantee:**
+
+- Opening a terminal
+- Attaching a Herdr client
+- Raising an existing client window
+- That a detached user will see the pane
+
+If no visible client is attached, a successful focus can still leave the user without an on-screen pane. See the detached-client limitation in [DESIGN.md](DESIGN.md).
+
+## 8. Disconnect / stale / reconnect
 
 - In-memory cache only
-- Disconnected: retain last agents, `connection="disconnected"`, `stale=true`
-- Reconnect: fresh `session.snapshot`, then new `events.subscribe`
+- On session failure: keep last agents, publish `connection="disconnected"`, `stale=true`
+- Backoff (exponential, capped), then fresh `session.snapshot` and a new `events.subscribe`
+- Helper stdin EOF stops the helper cleanly (QML Process close)
 
-## 9. Security and privacy
+## 9. Live integration safety
 
-Shepherd must not expose to QML:
-
-- Pane output or prompts
-- cwd or path fields from snapshots
-- Raw Herdr snapshots or backend JSON
-- Backend exception bodies, tracebacks, or socket paths
-- User session data from live integration runs
-
-Helper stderr may contain sanitized one-line diagnostics (e.g. `Helper: focus failed`) but never raw snapshots.
-
-## 10. Live integration safety
-
-Opt-in tests under `tests/integration/` run only when `SHEPHERD_RUN_LIVE_HERDR=1`. They:
+Opt-in only when `SHEPHERD_RUN_LIVE_HERDR=1` (`tests/integration/`). Guards:
 
 - Create exactly one disposable `shepherd-it-*` named session
-- Reject the default session name and default socket
-- Route every mutating Herdr command through `--session <name>`
-- Stop, delete the named session, and remove the temp project directory on exit
-- Skip entirely (no Herdr commands, no temp dirs) when the env var is unset
+- Reject session name `default` and the default socket path
+- Route mutating CLI through `herdr --session <name> …`
+- Stop/delete the named session and remove the temp project on exit
+- Skip entirely (no Herdr commands) when the env var is unset
 
-## 11. Known limitations
+## 10. Other known limitations
 
-1. **Focus target:** must use `pane_id` (not agent name alone)
-2. **Status unknown:** Herdr reports `unknown` when agent state cannot be determined
-3. **Agent detection:** some panes have no agent
+1. Focus target must be `pane_id` (not agent name alone) in Shepherd’s IPC
+2. Herdr may report `unknown` status when classification is uncertain
+3. Some panes have no agent and never appear in normalized output
