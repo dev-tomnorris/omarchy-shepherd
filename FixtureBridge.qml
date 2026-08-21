@@ -26,6 +26,8 @@ QtObject {
   property var pendingFocus: null
   property var lastActionError: null
   property var lastProtocolError: null
+  // Fixture never produces focus-success completions.
+  property var lastFocusSuccess: null
 
   property int requestSeq: 0
   property bool loadPending: false

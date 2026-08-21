@@ -38,10 +38,8 @@ QtObject {
   readonly property var pendingFocus: activeBridge.pendingFocus
   readonly property var lastActionError: activeBridge.lastActionError
   readonly property var lastProtocolError: activeBridge.lastProtocolError
+  readonly property var lastFocusSuccess: activeBridge.lastFocusSuccess
   readonly property var grouped: model.grouped
-
-  // Production HelperBridge only — never forwarded from fixture mode.
-  signal focusSucceeded(string paneId)
 
   function focus(paneId) {
     return activeBridge.focus(paneId)
@@ -63,13 +61,5 @@ QtObject {
   // Outside fixture mode, keep FixtureBridge idle with an empty path.
   property FixtureBridge fixtureBridge: FixtureBridge {
     fixturePath: root.fixtureMode ? root.fixturePath : ""
-  }
-
-  property Connections helperFocusForwarder: Connections {
-    target: root.helperBridge
-    enabled: !root.fixtureMode
-    function onFocusSucceeded(paneId) {
-      root.focusSucceeded(paneId)
-    }
   }
 }

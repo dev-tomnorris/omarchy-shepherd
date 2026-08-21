@@ -33,8 +33,9 @@ QtObject {
   property var pendingFocus: null
   property var lastActionError: null
   property var lastProtocolError: null
-
-  signal focusSucceeded(string paneId)
+  // Correlated focus-success record for Panel (property surface, not a signal).
+  // Shape: { requestId: string, paneId: string } or null.
+  property var lastFocusSuccess: null
 
   readonly property bool helperRunning: helperProc.running
 
@@ -217,13 +218,17 @@ QtObject {
         root.pendingFocus = null
         return
       }
-      // Focus success: capture → clear pending → clear matching error → emit once.
+      // Focus success: capture → clear pending → clear matching error → publish record.
       var paneId = root.pendingFocus.paneId
       root.pendingFocus = null
       if (root.lastActionError && root.lastActionError.requestId === requestId)
         root.lastActionError = null
-      if (nonemptyString(paneId))
-        root.focusSucceeded(String(paneId).trim())
+      if (nonemptyString(paneId) && nonemptyString(requestId)) {
+        root.lastFocusSuccess = {
+          requestId: String(requestId),
+          paneId: String(paneId).trim()
+        }
+      }
       return
     }
     if (root.pendingRefresh && root.pendingRefresh.requestId === requestId) {

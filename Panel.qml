@@ -55,6 +55,28 @@ Panel {
     repeat: false
   }
 
+  // Request ID captured from shepherd.focus(); consumed on matching completion/failure.
+  property string expectedFocusRequestId: ""
+  // Snapshot of lastFocusSuccess at Panel bind/init — never launch from pre-existing records.
+  property var ignoredFocusSuccess: null
+
+  readonly property var lastFocusSuccess: shepherd ? shepherd.lastFocusSuccess : null
+  readonly property var lastActionErrorWatch: shepherd ? shepherd.lastActionError : null
+
+  onShepherdChanged: {
+    // Service swap / plugin reload: fail closed on any in-flight expectation.
+    root.expectedFocusRequestId = ""
+    root.ignoredFocusSuccess = shepherd ? shepherd.lastFocusSuccess : null
+  }
+
+  onLastFocusSuccessChanged: root.tryConsumeFocusSuccess()
+
+  onLastActionErrorWatchChanged: root.clearExpectedOnMatchingFailure()
+
+  Component.onCompleted: {
+    root.ignoredFocusSuccess = shepherd ? shepherd.lastFocusSuccess : null
+  }
+
   function requestFocus(paneId) {
     if (!shepherd) return
     if (typeof shepherd.focus !== "function") return
@@ -66,7 +88,33 @@ Panel {
     if (typeof paneId !== "string" || paneId.trim() === "") return
     // New valid activation clears prior presentation error.
     root.presentationMessage = ""
-    shepherd.focus(paneId)
+    var requestId = shepherd.focus(paneId)
+    if (typeof requestId === "string" && requestId !== "")
+      root.expectedFocusRequestId = requestId
+  }
+
+  function clearExpectedOnMatchingFailure() {
+    if (root.expectedFocusRequestId === "") return
+    var err = root.lastActionErrorWatch
+    if (!err || typeof err !== "object") return
+    if (err.requestId === root.expectedFocusRequestId)
+      root.expectedFocusRequestId = ""
+  }
+
+  function tryConsumeFocusSuccess() {
+    if (root.expectedFocusRequestId === "") return
+    if (!shepherd || shepherd.fixtureMode === true) return
+    var rec = root.lastFocusSuccess
+    if (!rec || typeof rec !== "object") return
+    // Never launch a completion that existed before this Panel expected it.
+    if (rec === root.ignoredFocusSuccess) return
+    if (rec.requestId !== root.expectedFocusRequestId) return
+    if (typeof rec.paneId !== "string" || rec.paneId.trim() === "") return
+
+    // Consume before launch so one completion cannot launch twice.
+    root.expectedFocusRequestId = ""
+    root.ignoredFocusSuccess = rec
+    root.presentAfterFocusSuccess(rec.paneId.trim())
   }
 
   function presentAfterFocusSuccess(paneId) {
@@ -95,14 +143,6 @@ Panel {
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
-
-  Connections {
-    target: root.shepherd
-    enabled: !!(root.shepherd && root.shepherd.fixtureMode !== true)
-    function onFocusSucceeded(paneId) {
-      root.presentAfterFocusSuccess(paneId)
-    }
-  }
 
   IpcHandler {
     target: root.ipcTarget
