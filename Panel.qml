@@ -32,21 +32,36 @@ Panel {
   }
   readonly property bool showFocusError: !!(shepherd && shepherd.lastActionError)
   property string presentationMessage: ""
+  readonly property int agentCount: {
+    if (!shepherd || !shepherd.agents || !Array.isArray(shepherd.agents)) return 0
+    return shepherd.agents.length
+  }
+  readonly property string connectedAgentSummary: {
+    if (agentCount === 1) return "1 agent"
+    return agentCount + " agents"
+  }
+  // Fixed-copy status used by hero, bar tooltip, and reopen-during-cooldown feedback.
+  // Priority matches existing empty/error states; cooldown and agent counts come after.
+  readonly property string statusSummaryText: {
+    if (!shepherd) return "Service unavailable"
+    if (shepherd.helperCrashed) return "Shepherd helper is restarting"
+    if (shepherd.stale && hasAgents) return "Reconnecting — showing last known state"
+    if (shepherd.connection === "disconnected" && !hasAgents) return "Herdr is not running"
+    if (presentationBusy) return "Opening Herdr…"
+    if (!hasGrouped) return "No agents detected"
+    return connectedAgentSummary
+  }
   readonly property string panelErrorText: {
+    // Cooldown reopen feedback is status, not a launch failure; still fixed copy only.
+    if (presentationBusy) return "Opening Herdr…"
     if (presentationMessage !== "") return presentationMessage
     if (showFocusError) return "Unable to focus pane."
     return ""
   }
   readonly property bool showPanelError: panelErrorText !== ""
 
-  readonly property string heroMeta: {
-    if (!shepherd) return "Service unavailable"
-    if (shepherd.helperCrashed) return "Shepherd helper is restarting"
-    if (shepherd.stale && hasAgents) return "Reconnecting — showing last known state"
-    if (shepherd.connection === "disconnected" && !hasAgents) return "Herdr is not running"
-    if (!hasGrouped) return "No agents detected"
-    return "Service ready"
-  }
+  readonly property string heroMeta: root.statusSummaryText
+  readonly property string barTooltipText: root.statusSummaryText
 
   // Keyboard cursor (Omarchy bluetooth/network): panel-owned stable pane id +
   // cursorActive. Visuals go through AgentRow → CursorSurface.hasCursor.
@@ -258,8 +273,11 @@ Panel {
     })
 
     if (result.launched) {
+      // Close only after Presentation confirms bar.run was accepted.
+      // Focus success alone must not close; failures leave the panel open.
       root.presentationMessage = ""
       presentationCooldown.restart()
+      root.close()
       return
     }
     if (result.errorMessage !== "")
@@ -284,7 +302,7 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "󰭘"
-    tooltipText: "Shepherd agents."
+    tooltipText: root.barTooltipText
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }

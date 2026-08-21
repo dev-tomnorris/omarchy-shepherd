@@ -12,9 +12,7 @@ When v0.1.0 is tagged, replace `Release candidate` below with the tag date (`YYY
 
 Pending Phase 3 work before the v0.1.0 tag:
 
-- Small UX polish
 - Clean-install release gate from public GitHub `main`
-- Keyboard accessibility
 
 ## [0.1.0] - Release candidate
 
@@ -27,8 +25,13 @@ Release-candidate summary of capabilities already merged and verified. Not tagge
 - Normalized workspace, tab, and agent state (`pane_id`, name, status, focused, workspace, tab)
 - Status counts (working, blocked, done, idle, unknown, total)
 - Agent hierarchy grouped by workspace then tab
-- Mouse focus activation on agent rows via Herdr `agent.focus`
+- Mouse and keyboard focus activation on agent rows via Herdr `agent.focus`
+- Keyboard agent-row navigation (Up/Down or k/j, Enter/Space, Escape close, Tab/Backtab panel switch)
+- Optional documented `SUPER + CTRL + G` binding via `omarchy-shell shell toggle dev.tomnorris.shepherd` (user Hyprland config; plugin does not edit it)
 - Managed Herdr client open/raise after correlated focus success
+- Panel closes only after successful managed-client presentation (`bar.run` accepted); failures leave fixed status visible
+- Three-second presentation cooldown with `Opening Herdr…` feedback when the panel is reopened during cooldown
+- Concise bar tooltip and PanelHero status (agent counts, connection/helper/cooldown fixed copy)
 - Default and conventional named-session presentation descriptors
 - Fail-closed presentation for arbitrary `HERDR_SOCKET_PATH` overrides
 - Developer fixture mode (`SHEPHERD_DEV_FIXTURE=1`)
@@ -43,4 +46,4 @@ Release-candidate summary of capabilities already merged and verified. Not tagge
 - A Herdr terminal launched without Shepherd's dedicated app ID is outside Omarchy's managed-window reuse for Shepherd
 - A detached-but-still-open Shepherd-managed terminal is raised by app ID without reattach; close that window to restore automatic launch/attach
 - Herdr panes may lack compositor session variables; launch ownership stays with Omarchy `bar.run` in the graphical shell
-- Keyboard activation of agent rows is not implemented yet
+- Positional `SUPER + CTRL + <number>` panel shortcuts depend on bar-widget order and are not a stable Shepherd binding

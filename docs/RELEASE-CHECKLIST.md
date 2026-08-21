@@ -47,9 +47,14 @@ Lifecycle commands are interactive by default. Use `--yes` only for non-interact
 - [ ] Panel shows connected/offline/empty/error states correctly
 - [ ] Mouse focus on agent row triggers pane focus
 - [ ] Managed Herdr client opens/raises after correlated focus success
+- [ ] Panel closes only after successful presentation; focus/presentation failures leave fixed status visible
+- [ ] Cooldown shows `Opening Herdr…` when the panel is reopened during the three-second window
 - [ ] Arbitrary socket override (`HERDR_SOCKET_PATH`) fails closed (no presentation)
-- [ ] Keyboard activation — **pending** (not implemented yet)
-- [ ] Small UX polish checks — **pending** (Phase 3 remaining work)
+- [x] Keyboard activation — Up/Down or k/j move, Enter/Space activate, Escape close, Tab/Backtab panel switch (implemented; confirm on Wayland)
+- [x] Optional `SUPER + CTRL + G` opening via user `~/.config/hypr/bindings.lua` — documented; manually verified; plugin does not edit Hyprland config
+- [x] Tooltip/hero status copy — agent counts and fixed connection/cooldown messages (implemented; confirm on Wayland)
+- [ ] Small UX polish checks — remaining Wayland confirmation only
+- [ ] Clean-install release gate from public GitHub `main` — **not complete**
 
 ### Live Herdr (opt-in only)
 

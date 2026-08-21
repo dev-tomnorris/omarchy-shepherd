@@ -64,10 +64,44 @@ omarchy plugin validate .
 
 1. Ensure a Herdr 0.8.x session is running for the socket Shepherd resolves (default or `HERDR_SESSION` / `HERDR_SOCKET_PATH`).
 2. Open the Shepherd bar widget to view agents and connection state.
-3. Click an agent row to focus that pane and, when presentation is supported, open or raise Shepherd's managed Herdr client.
-4. Escape closes the panel; panel switching and scrolling follow normal Omarchy panel behavior.
+3. Activate an agent row (mouse click, or keyboard Enter/Space on the selected row) to focus that pane and, when presentation is supported, open or raise Shepherd's managed Herdr client.
+4. After a correlated focus success and a successful managed-client presentation (`bar.run` accepted), the Shepherd panel closes. Focus failures, unsupported presentation, and launcher errors leave the panel open with fixed status copy.
+5. Escape closes the panel; Tab/Backtab switches panels; vertical scrolling follows normal Omarchy panel behavior.
 
-Keyboard activation of agent rows is not implemented yet.
+### Keyboard navigation (in panel)
+
+Once the Shepherd panel is open:
+
+- **Up/Down** or **k/j** — move the agent-row cursor (clamped at the ends)
+- **Enter** or **Space** — activate the selected agent (same `Panel.requestFocus` path as mouse)
+- **Escape** — close the panel
+- **Tab / Backtab** — switch to the next/previous Omarchy panel
+
+### Optional keyboard opening
+
+Shepherd does **not** edit user Hyprland configuration. To open or toggle the panel from the keyboard, add an optional binding in `~/.config/hypr/bindings.lua` (user config; survives Omarchy updates):
+
+```lua
+o.bind(
+  "SUPER + CTRL + G",
+  "Shepherd",
+  "omarchy-shell shell toggle dev.tomnorris.shepherd"
+)
+```
+
+This uses the Omarchy command:
+
+```bash
+omarchy-shell shell toggle dev.tomnorris.shepherd
+```
+
+Manually verified on Omarchy. Save the file and run `hyprctl reload` if the binding does not become active immediately. Confirm with:
+
+```bash
+omarchy menu keybindings --print | rg -i Shepherd
+```
+
+Positional `SUPER + CTRL + <number>` panel shortcuts may also work, but they are not stable because they depend on bar-widget order. Tab/Backtab can switch panels once a panel is already open.
 
 ### Presentation behavior
 
@@ -76,7 +110,7 @@ Keyboard activation of agent rows is not implemented yet.
 - Deduplication is by **managed terminal app ID**, not by inspecting which process is running inside the terminal. A **manually launched** Herdr terminal without Shepherd's app ID is outside that reuse set (the first Shepherd presentation may open one additional managed client).
 - **Detaching** from Herdr or **closing** the visible managed client does **not** stop the persistent Herdr server or agents.
 - If a Shepherd-managed terminal is **detached but still open**, `omarchy-launch-or-focus-tui` still finds that app-ID window and raises its ordinary shell. It cannot tell that the `herdr` client inside has exited, so it does not automatically reattach. **Close** that detached managed window; the next Shepherd focus creates a fresh managed terminal and attaches to the persistent session.
-- After a successful presentation launch, agent rows stay non-activatable for **three seconds** (cooldown). That cooldown is separate from the in-flight `Focusing…` state.
+- After a successful presentation launch, the Shepherd panel closes and agent rows stay non-activatable for **three seconds** (cooldown). Reopening during the cooldown shows `Opening Herdr…` and keeps activation disabled. That cooldown is separate from the in-flight `Focusing…` state.
 
 ## Troubleshooting
 
@@ -130,9 +164,9 @@ omarchy plugin add https://github.com/dev-tomnorris/omarchy-shepherd.git --enabl
 
 ### Phase 3 — Public-release polish (in progress)
 
-- Small UX polish
 - Clean-install release gate from public GitHub `main`
-- Keyboard accessibility (not implemented yet)
+
+Keyboard navigation, optional keyboard opening docs, successful-presentation panel close, and tooltip/hero status copy are implemented.
 
 ### Later
 
