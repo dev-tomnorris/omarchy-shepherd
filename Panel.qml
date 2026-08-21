@@ -32,21 +32,42 @@ Panel {
   }
   readonly property bool showFocusError: !!(shepherd && shepherd.lastActionError)
   property string presentationMessage: ""
+  readonly property int agentCount: {
+    if (!shepherd || !shepherd.agents || !Array.isArray(shepherd.agents)) return 0
+    return shepherd.agents.length
+  }
+  readonly property string connectedAgentSummary: {
+    if (agentCount === 1) return "1 agent"
+    return agentCount + " agents"
+  }
+  // Fixed-copy status used by hero, bar tooltip, and reopen-during-cooldown feedback.
+  // Priority matches existing empty/error states; cooldown and agent counts come after.
+  readonly property string statusSummaryText: {
+    if (!shepherd) return "Service unavailable"
+    if (shepherd.helperCrashed) return "Shepherd helper is restarting"
+    if (shepherd.stale && hasAgents) return "Reconnecting — showing last known state"
+    if (shepherd.connection === "disconnected" && !hasAgents) return "Herdr is not running"
+    if (presentationBusy) return "Opening Herdr…"
+    if (!hasGrouped) return "No agents detected"
+    return connectedAgentSummary
+  }
   readonly property string panelErrorText: {
+    // Cooldown reopen feedback is status, not a launch failure; still fixed copy only.
+    if (presentationBusy) return "Opening Herdr…"
     if (presentationMessage !== "") return presentationMessage
     if (showFocusError) return "Unable to focus pane."
     return ""
   }
   readonly property bool showPanelError: panelErrorText !== ""
 
-  readonly property string heroMeta: {
-    if (!shepherd) return "Service unavailable"
-    if (shepherd.helperCrashed) return "Shepherd helper is restarting"
-    if (shepherd.stale && hasAgents) return "Reconnecting — showing last known state"
-    if (shepherd.connection === "disconnected" && !hasAgents) return "Herdr is not running"
-    if (!hasGrouped) return "No agents detected"
-    return "Service ready"
-  }
+  readonly property string heroMeta: root.statusSummaryText
+  readonly property string barTooltipText: root.statusSummaryText
+
+  // Keyboard cursor (Omarchy bluetooth/network): panel-owned stable pane id +
+  // cursorActive. Visuals go through AgentRow → CursorSurface.hasCursor.
+  property string selectedPaneId: ""
+  property bool cursorActive: false
+  property var flatPaneIds: []
 
   property Presentation presentationUtil: Presentation {}
 
@@ -73,8 +94,127 @@ Panel {
 
   onLastActionErrorWatchChanged: root.clearExpectedOnMatchingFailure()
 
+  onGroupedModelChanged: root.reselectKeyboardCursor()
+
+  onOpenedChanged: {
+    if (opened) {
+      root.reselectKeyboardCursor()
+      // Match bluetooth/network: selection is valid, chrome waits for first key/hover.
+      root.cursorActive = false
+      if (panelFlick) panelFlick.contentY = 0
+    }
+  }
+
   Component.onCompleted: {
     root.ignoredFocusSuccess = shepherd ? shepherd.lastFocusSuccess : null
+    root.reselectKeyboardCursor()
+  }
+
+  // Flat order matches rendering: workspace → tab → agent; nonempty pane_id only.
+  // Does not mutate groupedModel or ShepherdModel output.
+  function rebuildFlatPaneIds() {
+    var out = []
+    var groups = root.groupedModel
+    if (!groups || !Array.isArray(groups)) {
+      root.flatPaneIds = out
+      return out
+    }
+    for (var wi = 0; wi < groups.length; wi++) {
+      var group = groups[wi]
+      if (!group || typeof group !== "object") continue
+      var tabs = group.tabs
+      if (!tabs || !Array.isArray(tabs)) continue
+      for (var ti = 0; ti < tabs.length; ti++) {
+        var tabEntry = tabs[ti]
+        if (!tabEntry || typeof tabEntry !== "object") continue
+        var agents = tabEntry.agents
+        if (!agents || !Array.isArray(agents)) continue
+        for (var ai = 0; ai < agents.length; ai++) {
+          var agent = agents[ai]
+          if (!agent || typeof agent !== "object") continue
+          if (typeof agent.pane_id !== "string") continue
+          if (agent.pane_id.trim() === "") continue
+          out.push(agent.pane_id)
+        }
+      }
+    }
+    root.flatPaneIds = out
+    return out
+  }
+
+  function indexOfPaneId(paneId) {
+    var ids = root.flatPaneIds
+    if (!ids || typeof paneId !== "string") return -1
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i] === paneId) return i
+    }
+    return -1
+  }
+
+  // Preserve selected pane across refresh; if gone, land on a remaining row or clear.
+  function reselectKeyboardCursor() {
+    var ids = root.rebuildFlatPaneIds()
+    if (!ids || ids.length === 0) {
+      root.selectedPaneId = ""
+      root.cursorActive = false
+      return
+    }
+    if (root.selectedPaneId !== "" && root.indexOfPaneId(root.selectedPaneId) >= 0)
+      return
+    root.selectedPaneId = ids[0]
+  }
+
+  // dy from PanelKeyCatcher: Down/j → +1, Up/k → -1. Clamp at ends (network/bluetooth).
+  function moveKeyboardCursor(dy) {
+    if (dy === 0) return
+    if (!root.cursorActive) {
+      root.cursorActive = true
+      return
+    }
+    var ids = root.flatPaneIds
+    if (!ids || ids.length === 0) return
+    var idx = root.indexOfPaneId(root.selectedPaneId)
+    if (idx < 0) {
+      root.selectedPaneId = dy > 0 ? ids[0] : ids[ids.length - 1]
+      return
+    }
+    var next = Math.max(0, Math.min(ids.length - 1, idx + dy))
+    root.selectedPaneId = ids[next]
+  }
+
+  function activateKeyboardCursor() {
+    if (!root.cursorActive) return
+    var paneId = root.selectedPaneId
+    if (typeof paneId !== "string" || paneId.trim() === "") return
+    if (root.indexOfPaneId(paneId) < 0) return
+    root.requestFocus(paneId)
+  }
+
+  function selectPaneFromPointer(paneId) {
+    if (typeof paneId !== "string" || paneId.trim() === "") return
+    var trimmed = paneId.trim()
+    if (root.indexOfPaneId(trimmed) < 0) return
+    root.cursorActive = true
+    root.selectedPaneId = trimmed
+  }
+
+  // Dropbox/audio Flickable pattern: scroll only when the row is clipped.
+  function ensureCursorVisible(item) {
+    if (!panelFlick || !item) return
+    Qt.callLater(function() {
+      if (!panelFlick || !item) return
+      var margin = Style.space(6)
+      var point = item.mapToItem(panelFlick.contentItem, 0, 0)
+      var top = point.y
+      var bottom = top + item.height
+      var viewTop = panelFlick.contentY
+      var viewBottom = viewTop + panelFlick.height
+      var maxY = Math.max(0, panelFlick.contentHeight - panelFlick.height)
+      if (top < viewTop + margin)
+        panelFlick.contentY = Math.max(0, top - margin)
+      else if (bottom > viewBottom - margin)
+        panelFlick.contentY = Math.min(maxY, bottom + margin - panelFlick.height)
+    })
   }
 
   function requestFocus(paneId) {
@@ -133,8 +273,11 @@ Panel {
     })
 
     if (result.launched) {
+      // Close only after Presentation confirms bar.run was accepted.
+      // Focus success alone must not close; failures leave the panel open.
       root.presentationMessage = ""
       presentationCooldown.restart()
+      root.close()
       return
     }
     if (result.errorMessage !== "")
@@ -159,7 +302,7 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "󰭘"
-    tooltipText: "Shepherd agents."
+    tooltipText: root.barTooltipText
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }
@@ -179,6 +322,10 @@ Panel {
       id: keyCatcher
       anchors.fill: parent
 
+      onMoveRequested: function(dx, dy) {
+        if (dy !== 0) root.moveKeyboardCursor(dy)
+      }
+      onActivateRequested: root.activateKeyboardCursor()
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
@@ -259,7 +406,11 @@ Panel {
                 focusBusy: root.focusBusy
                 presentationBusy: root.presentationBusy
                 pendingPaneId: root.pendingPaneId
+                selectedPaneId: root.selectedPaneId
+                cursorActive: root.cursorActive
                 onFocusRequested: function(paneId) { root.requestFocus(paneId) }
+                onPointerSelectRequested: function(paneId) { root.selectPaneFromPointer(paneId) }
+                onEnsureVisibleRequested: function(item) { root.ensureCursorVisible(item) }
               }
             }
           }
