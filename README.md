@@ -1,108 +1,134 @@
 # Shepherd for Omarchy
 
-**Shepherd** is an Omarchy plugin that monitors and manages Herdr agents across workspaces.
+**Shepherd** is an Omarchy shell plugin that monitors Herdr agents and focuses agent panes from the status bar.
 
 **Display name:** Shepherd  
 **Plugin ID:** `dev.tomnorris.shepherd`  
 **Tagline:** Keep watch over your Herdr flock.
 
-> **Status:** Phase 0 (architecture) and Phase 1 (Python helper) are complete. Phase 2 QML/Omarchy integration is pending. Shepherd is **not installable or usable as an Omarchy plugin yet** — `manifest.json`, `Shepherd.qml`, and `Panel.qml` do not exist.
+> **Status:** Phase 0 (architecture) and Phase 1 (Python helper) are complete. Phase 2 (QML service, panel, and focus controls) is complete and has been live-tested in Omarchy. Phase 3 / public-release polish is in progress. Shepherd is usable when installed as an Omarchy plugin; it is not a generally released product yet.
 
-## Overview
+## Capabilities
 
-Shepherd displays live Herdr agents with their `working`, `blocked`, `done`, `idle`, and `unknown` states. It focuses on visibility and control of agent state.
+- Monitor Herdr agents (`working`, `blocked`, `done`, `idle`, `unknown`)
+- Show connection, stale, and helper-restart states
+- Group agents by workspace and tab
+- Show status counts and a scrollable agent hierarchy
+- Focus a running agent pane via Herdr `agent.focus`
+- Recover from helper disconnects and crashes (restart with backoff)
 
-Shepherd is **not** a token-usage widget and will not duplicate Herdr's notification delivery.
+Shepherd is **not** a token-usage widget and does not duplicate Herdr notification delivery.
 
-## What works today
+## Requirements
 
-The Phase 1 Python helper (`helper/`) is implemented and covered by unit tests. It has been verified against a disposable Herdr 0.8.0 named session (`shepherd-it-*`) via opt-in live integration tests.
+- Omarchy shell with plugin support (`omarchy plugin …`)
+- Herdr **0.8.x** (verified against 0.8.0)
+- Python 3 (stdlib only for the helper)
+- A Nerd Font for the bar icon glyph
 
-Currently working:
+## Install / update / enable
 
-- Unix socket path resolution (`XDG_CONFIG_HOME`, `HERDR_SOCKET_PATH`, `HERDR_SESSION`)
-- Snapshot normalization to the minimal QML contract
-- `events.subscribe` with pane-scoped `pane.agent_status_changed` subscriptions
-- Trailing-edge ~100 ms debounced refresh on invalidation pushes
-- JSONL IPC for `focus` and `refresh` commands
-- One-shot RPC for `session.snapshot` and `agent.focus`
-- Reconnect with exponential backoff, fresh snapshot, and resubscribe
-- Sanitized IPC errors and fixed failure messages (no backend exception bodies on stdout)
-- Clean shutdown when helper stdin closes
+Commands below match the Omarchy CLI help (`omarchy plugin add|update|enable|validate`). Do not `git pull` inside the watched installed plugin directory; use `omarchy plugin update` for git-managed installs.
 
-## Architecture
+Add from a git URL (alias: `omarchy plugin install`):
 
-Shepherd will consist of:
+```bash
+omarchy plugin add <git-url>
+omarchy plugin enable dev.tomnorris.shepherd
+```
 
-- A QML bar-widget plugin *(not yet implemented)*
-- A popup panel for detailed agent overview *(not yet implemented)*
-- A Python helper process connecting to Herdr's Unix socket *(implemented)*
+Optional: add and enable in one step, or place the bar widget:
 
-See [docs/DESIGN.md](docs/DESIGN.md) for module layout and [docs/HERDR-CONTRACT.md](docs/HERDR-CONTRACT.md) for the Herdr protocol boundary.
+```bash
+omarchy plugin add <git-url> --enable
+omarchy plugin enable dev.tomnorris.shepherd --section right
+```
 
-## Development tests
+Update an installed git-managed copy:
 
-Run the default unit and fake-server suite (live integration is skipped):
+```bash
+omarchy plugin update dev.tomnorris.shepherd
+```
+
+Validate a plugin folder before install:
+
+```bash
+omarchy plugin validate .
+```
+
+## Usage
+
+1. Ensure a Herdr 0.8.x session is running for the socket Shepherd resolves (default or `HERDR_SESSION` / `HERDR_SOCKET_PATH`).
+2. Open the Shepherd bar widget to view agents and connection state.
+3. Click an agent row to request focus on that pane inside the Herdr session.
+4. Escape closes the panel; panel switching and scrolling follow normal Omarchy panel behavior.
+
+**Known limitation:** `agent.focus` updates focus inside the persistent Herdr session. If no Herdr client is attached in a visible terminal, the request can succeed without bringing a pane on-screen. For v0.1, launch or attach to Herdr separately (`herdr` / `herdr session attach <name>`). This is not data loss and not a helper failure.
+
+## Development
+
+Default unit and fake-server suite (live Herdr tests skipped):
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Run opt-in live Herdr integration against a disposable named session only:
+Opt-in live integration against a disposable `shepherd-it-*` session only (never the default session):
 
 ```bash
 SHEPHERD_RUN_LIVE_HERDR=1 \
   python -m unittest tests.integration.test_herdr_live -v
 ```
 
-Live integration requires `SHEPHERD_RUN_LIVE_HERDR=1`. It creates and destroys exactly one `shepherd-it-*` session, never touches the default Herdr session, and skips entirely when the variable is unset.
-
-## Phased roadmap
-
-### Phase 0 — Discovery and architecture ✅
-- [x] Omarchy plugin contract research
-- [x] Herdr 0.8.0 API and data model
-- [x] Data flow and communication patterns documented
-
-### Phase 1 — Core helper ✅
-- [x] Python helper connecting to Herdr socket
-- [x] Snapshot bootstrap, normalization, and event subscription
-- [x] Debounced refresh, reconnect, focus/refresh IPC
-- [x] Unit tests and opt-in live integration against Herdr 0.8.0
-
-### Phase 2 — QML widget and panel
-- [ ] `manifest.json`, `Shepherd.qml`, `Panel.qml`
-- [ ] QML ↔ helper JSONL wiring
-- [ ] Bar widget and popup panel UI
-
-### Phase 3 — Omarchy installation and usability
-- [ ] Install and enable via Omarchy plugin commands
-- [ ] End-to-end testing in Omarchy shell
-
-### Later — Optional enhancements
-- [ ] Agent search/filter
-- [ ] Workspace selector
-- [ ] Historical agent status trends
-
-## Installation
-
-Shepherd cannot be installed yet. When Phase 2–3 are complete, installation will look like:
+Plugin structure validation:
 
 ```bash
-omarchy plugin add <repository-url>
-omarchy plugin enable dev.tomnorris.shepherd
+omarchy plugin validate .
 ```
 
-## Permissions required
+### Fixture mode (development only)
 
-Shepherd will require read/write access to the local Herdr socket.
+Set `SHEPHERD_DEV_FIXTURE=1` so the service loads `tests/fixtures/normalized_state.json` through `FixtureBridge` and **does not** start the Python helper or contact Herdr. Leave this unset for normal use.
 
-## Security
+## Privacy and security
 
-- Does not read pane output or prompts
-- Does not persist state or send it externally
-- The helper receives Herdr snapshot data locally and emits only normalized fields to QML
-- Helper stderr contains sanitized diagnostics only, never raw snapshots or backend exception bodies
+- No prompts, pane output, or transcripts are displayed
+- Only normalized agent / workspace / tab / status fields reach QML
+- No external telemetry; state is in-memory only
+- Focus uses `pane_id` internally; public docs use fake IDs such as `w1:p1`
+- Helper stderr stays sanitized (no raw snapshots or exception bodies)
+
+## Roadmap
+
+### Phase 0 — Discovery and architecture ✅
+- [x] Omarchy plugin contract and Herdr 0.8.x data model
+- [x] Architecture and transport documentation
+
+### Phase 1 — Core helper ✅
+- [x] Python stdlib helper (RPC + exclusive subscribe)
+- [x] Normalization, debounce, reconnect, focus/refresh IPC
+- [x] Unit tests and opt-in disposable live integration
+
+### Phase 2 — QML widget and panel ✅
+- [x] Manifest `service` + `bar-widget` entry points
+- [x] Singleton service, helper bridge, fixture bridge
+- [x] Grouped panel UI and agent-row focus activation
+- [x] Live Omarchy install, update, and focus verification
+
+### Phase 3 — Public-release polish (in progress)
+- [ ] Packaging / discovery polish for general install
+- [ ] Broader end-to-end regression in release environments
+- [ ] Documentation and UX finish work for a public release
+
+### Later
+- [ ] Launch or attach a visible Herdr client when activating an agent and no client is currently available (requires design for detecting a visible client, selecting the named/default session, using Omarchy’s supported terminal-launch path, avoiding duplicate windows, ordering attach vs pane focus, and safe behavior from panels without a TTY)
+- [ ] Agent search / filter
+- [ ] Workspace selector
+- [ ] Historical status trends
+
+## Contributing
+
+Prefer small, reviewed changes. Keep the helper on Python stdlib, keep QML on the normalized contract, and never target the default Herdr session from automated tests. See [docs/DESIGN.md](docs/DESIGN.md) and [docs/HERDR-CONTRACT.md](docs/HERDR-CONTRACT.md).
 
 ## License
 

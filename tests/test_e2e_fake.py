@@ -44,6 +44,27 @@ class TestFakeEndToEnd(unittest.TestCase):
                 "pane_id": "w1:p2",
                 "workspace_id": "w1",
             })
+            # Unchanged normalized agents: debounce still refreshes snapshot, no new state.
+            self.assertTrue(
+                wait_until(
+                    lambda: len([r for r in server.rpc_records() if r.methods == ["session.snapshot"]]) >= 2,
+                    timeout=2.0,
+                )
+            )
+            self.assertEqual(len(sink.of_type("state")), 1)
+
+            # Real status change must publish.
+            snapshot = dict(server.snapshot)
+            agents = [dict(a) for a in snapshot["agents"]]
+            for agent in agents:
+                if agent["pane_id"] == "w1:p2":
+                    agent["agent_status"] = "idle"
+            snapshot["agents"] = agents
+            server.snapshot = snapshot
+            server.push_scoped(
+                "pane.agent_status_changed",
+                {"pane_id": "w1:p2", "agent_status": "idle"},
+            )
             self.assertTrue(wait_until(lambda: len(sink.of_type("state")) >= 2))
 
             stdin_write.write('{"type":"focus","request_id":"req-e2e","pane_id":"w1:p1"}\n')
