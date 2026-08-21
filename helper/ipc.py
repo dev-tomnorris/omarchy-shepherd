@@ -8,6 +8,7 @@ import select
 import sys
 from threading import Lock, Thread
 
+from helper.presentation import sanitize_presentation_descriptor
 from helper.rpc import RpcDisconnected, RpcError, RpcTimeout
 
 FOCUS_FAILURE_MESSAGE = "Unable to focus pane."
@@ -62,13 +63,19 @@ class HelperIPC:
             self.outfile.write(json.dumps(msg) + "\n")
             self.outfile.flush()
 
-    def send_state(self, state, connection="connected", stale=False):
+    def send_state(self, state, connection="connected", stale=False, presentation=None):
+        if presentation is None:
+            presentation = getattr(self.helper, "presentation", None)
+        # Sanitize at the privacy boundary: only the four presentation keys,
+        # with argv copied. Extra keys and malformed values never reach stdout.
+        safe_presentation = sanitize_presentation_descriptor(presentation)
         self.send({
             "type": "state",
             "connection": connection,
             "stale": stale,
             "agents": state.get("agents", []),
             "counts": state.get("counts", {}),
+            "presentation": safe_presentation,
         })
 
     def send_action_result(self, req_id, ok, message=None):

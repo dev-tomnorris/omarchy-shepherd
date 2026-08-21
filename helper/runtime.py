@@ -8,9 +8,9 @@ from threading import Event, Lock, Thread
 from helper.events import build_subscriptions, pane_ids_from_snapshot
 from helper.ipc import HelperIPC
 from helper.normalize import Normalizer
+from helper.presentation import sanitize_presentation_descriptor
 from helper.protocol import ProtocolError, is_invalidation_push
 from helper.rpc import RpcClient, RpcDisconnected, RpcError, RpcTimeout
-from helper.socket_path import resolve_socket_path
 from helper.subscribe import SubscribeError, SubscribeSession
 
 
@@ -19,18 +19,19 @@ def _diag(message):
     sys.stderr.flush()
 
 
-def publication_fingerprint(state, connection, stale):
+def publication_fingerprint(state, connection, stale, presentation=None):
     """Canonical fingerprint of a QML-facing state publication.
 
-    Compares normalized agents/counts plus connection/stale only — never raw
-    Herdr event payloads, pane paths, or host-specific fields beyond the
-    documented agent contract already present in ``state``.
+    Compares normalized agents/counts, connection/stale, and the sanitized
+    presentation descriptor — never raw Herdr event payloads, pane paths, or
+    host-specific fields beyond the documented agent contract.
     """
     payload = {
         "connection": "connected" if connection == "connected" else "disconnected",
         "stale": bool(stale),
         "agents": (state or {}).get("agents", []),
         "counts": (state or {}).get("counts", {}),
+        "presentation": sanitize_presentation_descriptor(presentation),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
@@ -38,7 +39,9 @@ def publication_fingerprint(state, connection, stale):
 class Helper:
     def __init__(
         self,
-        socket_path=None,
+        *,
+        socket_path,
+        presentation,
         debounce_s=0.1,
         recv_timeout=0.2,
         rpc_timeout=5.0,
@@ -49,7 +52,13 @@ class Helper:
         rpc_client=None,
         subscribe_session=None,
     ):
-        self.socket_path = socket_path or resolve_socket_path()
+        # socket_path and presentation are required keyword-only. Production
+        # uses shepherd_helper.build_helper(); tests inject fakes explicitly.
+        if not isinstance(socket_path, str) or not socket_path:
+            raise TypeError("socket_path is required")
+        if presentation is None:
+            raise TypeError("presentation is required")
+        self.socket_path = socket_path
         self.debounce_s = debounce_s
         self.recv_timeout = recv_timeout
         self.rpc_timeout = rpc_timeout
@@ -60,6 +69,7 @@ class Helper:
             self.socket_path, recv_timeout=recv_timeout, ack_timeout=rpc_timeout
         )
         self.normalizer = Normalizer()
+        self.presentation = sanitize_presentation_descriptor(presentation)
         self.ipc = HelperIPC(self, infile=infile, outfile=outfile)
         self.stop_event = Event()
         self.generation = 0
@@ -119,7 +129,7 @@ class Helper:
         identical agents). Duplicate connected publications after unchanged
         invalidation snapshots are suppressed.
         """
-        fp = publication_fingerprint(state, connection, stale)
+        fp = publication_fingerprint(state, connection, stale, self.presentation)
         with self._publish_lock:
             if fp == self._last_published_fp:
                 return False

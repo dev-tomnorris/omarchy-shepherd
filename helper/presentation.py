@@ -17,6 +17,8 @@ from pathlib import Path
 
 _DEFAULT_APP_ID = "org.omarchy.herdr"
 _APP_ID_PREFIX = "org.omarchy.herdr.session-"
+_PRESENTATION_KEYS = ("kind", "supported", "app_id", "argv")
+_VALID_KINDS = frozenset(("default", "named", "socket_override"))
 
 
 def build_presentation_descriptor(env, config_dir=None):
@@ -49,6 +51,63 @@ def build_presentation_descriptor(env, config_dir=None):
         return _named_descriptor(session)
 
     return _default_descriptor()
+
+
+def sanitize_presentation_descriptor(value):
+    """Return an isolated, JSON-safe presentation dict for state publication.
+
+    Policy for malformed or incomplete internal values: emit the standard
+    unsupported socket_override descriptor. Never raise with path/session
+    details, never forward extra keys, and always copy ``argv``.
+
+    Input must contain exactly the keys kind/supported/app_id/argv. Named
+    descriptors must carry the Task 1 SHA-256 app ID for argv[2]. Boolean
+    ``supported`` must be the True/False singletons (not 0/1).
+    """
+    if not isinstance(value, dict):
+        return _unsupported_socket_override()
+    if set(value.keys()) != set(_PRESENTATION_KEYS):
+        return _unsupported_socket_override()
+
+    kind = value.get("kind")
+    supported = value.get("supported")
+    app_id = value.get("app_id")
+    argv = value.get("argv")
+
+    if kind not in _VALID_KINDS:
+        return _unsupported_socket_override()
+    # Reject integer 0/1 and other truthy/falsy stand-ins.
+    if supported is not True and supported is not False:
+        return _unsupported_socket_override()
+    if not isinstance(app_id, str):
+        return _unsupported_socket_override()
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        return _unsupported_socket_override()
+
+    if kind == "default":
+        if supported is not True or app_id != _DEFAULT_APP_ID or argv != ["herdr"]:
+            return _unsupported_socket_override()
+    elif kind == "named":
+        if supported is not True:
+            return _unsupported_socket_override()
+        if len(argv) != 3 or argv[0] != "herdr" or argv[1] != "--session":
+            return _unsupported_socket_override()
+        # Preserve Task 1 truthiness: whitespace-only names remain accepted
+        # (nonempty string), matching socket_path / build_presentation_descriptor.
+        if not argv[2]:
+            return _unsupported_socket_override()
+        if app_id != _named_app_id(argv[2]):
+            return _unsupported_socket_override()
+    else:  # socket_override
+        if supported is not False or app_id != "" or argv != []:
+            return _unsupported_socket_override()
+
+    return {
+        "kind": kind,
+        "supported": supported,
+        "app_id": app_id,
+        "argv": list(argv),
+    }
 
 
 def _resolve_config_home(env, config_dir):

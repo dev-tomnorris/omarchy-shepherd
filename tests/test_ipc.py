@@ -23,7 +23,8 @@ from support import wait_until
 
 FIXTURE_PATH = os.path.join(_HERE, "fixtures", "normalized_state.json")
 
-STATE_TOP_LEVEL_FIELDS = {"type", "connection", "stale", "agents", "counts"}
+STATE_TOP_LEVEL_FIELDS = {"type", "connection", "stale", "agents", "counts", "presentation"}
+PRESENTATION_FIELDS = {"kind", "supported", "app_id", "argv"}
 AGENT_FIELDS = {"pane_id", "name", "status", "focused", "workspace", "tab"}
 COUNT_FIELDS = {"working", "blocked", "done", "idle", "unknown", "total"}
 ERROR_FIELDS = {"type", "request_id", "code", "message"}
@@ -95,6 +96,12 @@ class RecordingHelper:
         self.focus_side_effect = None
         self.refresh_side_effect = None
         self._lock = threading.Lock()
+        self.presentation = {
+            "kind": "default",
+            "supported": True,
+            "app_id": "org.omarchy.herdr",
+            "argv": ["herdr"],
+        }
 
     def focus_agent(self, pane_id):
         with self._lock:
@@ -281,6 +288,9 @@ class TestStateOutput(unittest.TestCase):
         self.assertEqual(msg["connection"], "connected")
         self.assertIs(msg["stale"], False)
         self.assertEqual(set(msg["counts"].keys()), COUNT_FIELDS)
+        self.assertEqual(set(msg["presentation"].keys()), PRESENTATION_FIELDS)
+        self.assertEqual(msg["presentation"]["kind"], "default")
+        self.assertEqual(msg["presentation"]["argv"], ["herdr"])
 
     def test_agent_records_remain_unchanged(self):
         self.ipc.send_state(self.fixture)

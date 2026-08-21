@@ -12,8 +12,8 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fakes.fake_herdr import FakeHerdrServer
-from helper.runtime import Helper, publication_fingerprint
-from support import JsonlSink, wait_until
+from helper.runtime import publication_fingerprint
+from support import JsonlSink, make_helper, wait_until
 
 
 class TestPublicationFingerprint(unittest.TestCase):
@@ -54,8 +54,8 @@ class TestStatePublication(unittest.TestCase):
         stdin_r, stdin_w = os.pipe()
         self.stdin_read = os.fdopen(stdin_r)
         self.stdin_write = os.fdopen(stdin_w, "w")
-        self.helper = Helper(
-            socket_path=self.socket_path,
+        self.helper = make_helper(
+            self.socket_path,
             debounce_s=0.08,
             recv_timeout=0.05,
             rpc_timeout=2.0,
@@ -93,6 +93,8 @@ class TestStatePublication(unittest.TestCase):
         self.assertEqual(states[0]["connection"], "connected")
         self.assertFalse(states[0]["stale"])
         self.assertEqual(states[0]["counts"]["total"], 2)
+        self.assertIn("presentation", states[0])
+        self.assertEqual(set(states[0]["presentation"].keys()), {"kind", "supported", "app_id", "argv"})
 
     def test_duplicate_invalidations_do_not_republish_unchanged_state(self):
         before = len(self._states())
@@ -177,9 +179,21 @@ class TestStatePublication(unittest.TestCase):
         self.assertTrue(disc["stale"])
         self.assertFalse(recon["stale"])
         self.assertEqual(
-            publication_fingerprint({"agents": first["agents"], "counts": first["counts"]}, "connected", False),
-            publication_fingerprint({"agents": recon["agents"], "counts": recon["counts"]}, "connected", False),
+            publication_fingerprint(
+                {"agents": first["agents"], "counts": first["counts"]},
+                "connected",
+                False,
+                first.get("presentation"),
+            ),
+            publication_fingerprint(
+                {"agents": recon["agents"], "counts": recon["counts"]},
+                "connected",
+                False,
+                recon.get("presentation"),
+            ),
         )
+        self.assertEqual(first["presentation"], recon["presentation"])
+        self.assertEqual(disc["presentation"], first["presentation"])
 
     def test_explicit_refresh_correlates_action_result_without_forcing_duplicate_state(self):
         before_states = len(self._states())

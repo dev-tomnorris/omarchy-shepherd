@@ -12,7 +12,7 @@ _ROOT = os.path.dirname(_TESTS)
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _TESTS)
 
-from helper.runtime import Helper
+from helper.presentation import build_presentation_descriptor
 from integration.herdr_session import (
     DisposableHerdrSession,
     SESSION_PREFIX,
@@ -22,9 +22,10 @@ from integration.herdr_session import (
     session_socket_path,
     validate_session_name,
 )
-from support import JsonlSink, wait_until
+from support import JsonlSink, make_helper, wait_until
 
 _LIVE_SKIP_REASON = live_herdr_skip_reason()
+_APP_ID_PREFIX = "org.omarchy.herdr.session-"
 
 
 @unittest.skipIf(_LIVE_SKIP_REASON is not None, _LIVE_SKIP_REASON or "")
@@ -36,6 +37,8 @@ class TestHerdrLiveIntegration(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.default_running_after = default_server_running()
+        if cls.default_running_before != cls.default_running_after:
+            raise AssertionError("default Herdr server running state changed")
 
     def setUp(self):
         self.session = DisposableHerdrSession()
@@ -47,8 +50,11 @@ class TestHerdrLiveIntegration(unittest.TestCase):
         stdin_r, stdin_w = os.pipe()
         self.stdin_read = os.fdopen(stdin_r)
         self.stdin_write = os.fdopen(stdin_w, "w")
-        self.helper = Helper(
-            socket_path=self.session.socket_path,
+        self.helper = make_helper(
+            self.session.socket_path,
+            presentation=build_presentation_descriptor({
+                "HERDR_SESSION": self.session.session_name,
+            }),
             debounce_s=0.15,
             recv_timeout=0.1,
             rpc_timeout=5.0,
@@ -104,6 +110,24 @@ class TestHerdrLiveIntegration(unittest.TestCase):
         self.assertEqual(state["connection"], "connected")
         self.assertIs(state["stale"], False)
         self.assertGreaterEqual(len(state["agents"]), 1)
+
+    def test_presentation_describes_disposable_named_session(self):
+        state = self.sink.of_type("state")[0]
+        presentation = state["presentation"]
+        self.assertEqual(
+            set(presentation.keys()),
+            {"kind", "supported", "app_id", "argv"},
+        )
+        self.assertEqual(presentation["kind"], "named")
+        self.assertIs(presentation["supported"], True)
+        self.assertTrue(presentation["app_id"].startswith(_APP_ID_PREFIX))
+        self.assertEqual(len(presentation["app_id"]), len(_APP_ID_PREFIX) + 12)
+        self.assertEqual(presentation["argv"][:2], ["herdr", "--session"])
+        self.assertEqual(presentation["argv"][2], self.session.session_name)
+        # Raw socket path must never appear in serialized state.
+        blob = json.dumps(state)
+        self.assertNotIn(self.session.socket_path, blob)
+        self.assertNotIn("socket_path", presentation)
 
     def test_snapshot_normalization_from_live_session(self):
         state = self.sink.of_type("state")[0]
@@ -186,6 +210,7 @@ class TestHerdrLiveIntegration(unittest.TestCase):
 
     def test_disconnect_and_reconnect_within_named_session(self):
         before = len(self.sink.of_type("state"))
+        before_presentation = self.sink.of_type("state")[0]["presentation"]
         self.session.stop_server()
         self.assertTrue(
             wait_until(
@@ -196,6 +221,7 @@ class TestHerdrLiveIntegration(unittest.TestCase):
         )
         disconnected = [s for s in self.sink.of_type("state") if s.get("connection") == "disconnected"][-1]
         self.assertIs(disconnected["stale"], True)
+        self.assertEqual(disconnected["presentation"], before_presentation)
         self.session.start_server()
         self.assertTrue(
             wait_until(
@@ -205,6 +231,8 @@ class TestHerdrLiveIntegration(unittest.TestCase):
             "helper did not reconnect to named session",
         )
         self.assertGreater(len(self.sink.of_type("state")), before)
+        after_presentation = self.sink.of_type("state")[-1]["presentation"]
+        self.assertEqual(after_presentation, before_presentation)
 
     def test_shutdown_closes_helper_threads(self):
         self.helper.stop()

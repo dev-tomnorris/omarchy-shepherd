@@ -4,6 +4,16 @@ import json
 import time
 from threading import Lock
 
+from helper.runtime import Helper
+
+
+DEFAULT_PRESENTATION = {
+    "kind": "default",
+    "supported": True,
+    "app_id": "org.omarchy.herdr",
+    "argv": ["herdr"],
+}
+
 
 class JsonlSink:
     def __init__(self):
@@ -34,3 +44,11 @@ def wait_until(predicate, timeout=2.0, interval=0.02):
             return True
         time.sleep(interval)
     return False
+
+
+def make_helper(socket_path, presentation=None, **kwargs):
+    """Construct a Helper with required fake socket_path and presentation."""
+    if presentation is None:
+        presentation = dict(DEFAULT_PRESENTATION)
+        presentation["argv"] = list(DEFAULT_PRESENTATION["argv"])
+    return Helper(socket_path=socket_path, presentation=presentation, **kwargs)
